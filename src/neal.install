@@ -2,6 +2,7 @@ bin: [
   "core/_build/main.native" { "neal" }
 ]
 lib: [
+  "providers/kotlin/_build/kotlin.provider.cmxs" { "providers/kotlin.provider.cmxs" }
   "providers/swift/_build/swift.provider.cmxs" { "providers/swift.provider.cmxs" }
   "providers/python/_build/python.provider.cmxs" { "providers/python.provider.cmxs" }
 

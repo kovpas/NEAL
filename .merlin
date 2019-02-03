@@ -6,6 +6,8 @@ S src/core/provider
 S src/core/rule
 S src/providers
 S src/providers/helpers
+S src/providers/kotlin
+S src/providers/kotlin/parsing
 S src/providers/python
 S src/providers/swift
 S src/providers/swift/parsing
@@ -19,6 +21,8 @@ B src/core/_build/directives
 B src/core/_build/driver
 B src/core/_build/provider
 B src/core/_build/rule
+B src/providers/kotlin/_build
+B src/providers/kotlin/_build/parsing
 B src/providers/python/_build
 B src/providers/swift/_build
 B src/providers/swift/_build/parsing
