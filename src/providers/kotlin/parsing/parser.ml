@@ -30,18 +30,18 @@ let rec grammar = ()
 (*| kotlinFile                                                                          |*)
 (*|     : shebangLine? NL* fileAnnotation* packageHeader importList topLevelObject* EOF |*)
 (*|     ;                                                                               |*)
-and kotlinFile () = 
-  mkList1 (fun () -> (* TODO - how to parse in order? *)
-    fix shebangLine (* TODO - should be first line in the file and should have exactly one of these*)
-    <|> fix fileAnnotation
-    <|> fix packageHeader (* TODO - exactly one? *)
-    <|> fix importList
-    <|> fix topLevelObject
-  ) >>= fun stm ->
-    pos >>= fun pos ->
-      (
-        anyspace *> end_of_input <?> (" at offset " ^ string_of_int pos ^ ", expected")
-      ) *> return stm
+and kotlinFile () =
+  mkNode "KotlinFile"
+  <:> mkOptPropE "ShebangLine" shebangLine
+  <:> mkOptProp "FileAnnotations" (mkList1 fileAnnotation)
+  <:> mkPropE "PackageHeader" packageHeader
+  <:> mkPropE "ImportList" importList
+  <:> mkOptProp "TopLevelObject" (mkList1 topLevelObject)
+    >>= fun stm ->
+      pos >>= fun pos ->
+        (
+          anyspace *> end_of_input <?> (" at offset " ^ string_of_int pos ^ ", expected")
+        ) *> return stm
 
 (*| script                                                                                |*)
 (*|     : shebangLine? NL* fileAnnotation* packageHeader importList (statement semi)* EOF |*)
@@ -51,37 +51,39 @@ and kotlinFile () =
 (*| shebangLine                                                                                             |*)
 (*|     : ShebangLine NL+ |*)
 (*|     ;                                                                                                      |*)
-and shebangLine _ = 
+and shebangLine () =
   shebangLine' ()
-  <* skip_many1 (fix nl)
+  <* skip_many1 nl
 
 (*| fileAnnotation                                                                                             |*)
 (*|     : ANNOTATION_USE_SITE_TARGET_FILE NL* (LSQUARE unescapedAnnotation+ RSQUARE | unescapedAnnotation) NL* |*)
 (*|     ;                                                                                                      |*)
-and fileAnnotation _ = 
+and fileAnnotation () =
   annotation_use_site_target_file ()
-  <* skip_many (fix nl)
+  <* skip_many nl
   <:> (
     (lsquare *> mkProp "Annotations" (mkList1 (fun () -> unescapedAnnotation () <* anyspace)) <* rsquare)
     <|> mkPropE "Annotation" unescapedAnnotation (* TODO - make a list *)
   )
-  <* skip_many (fix nl)
+  <* skip_many nl
 
 (*| packageHeader                     |*)
 (*|     : (PACKAGE identifier semi?)? |*)
 (*|     ;                             |*)
-and packageHeader _ =
-  mkNode "PackageHeader"
-  <* package
-  <:> mkPropE "Name" identifier
-  <* optSemi
+and packageHeader () =
+  mkOpt (
+    mkNode "PackageHeader"
+    <* package
+    <:> mkPropE "Name" identifier
+    <* optSemi
+  )
 
 (*| importList          |*)
 (*|     : importHeader* |*)
 (*|     ;               |*)
-and importList _ =
+and importList () =
   mkNode "ImportList"
-  <:> mkPropE "Value" (fun () -> mkList1 importHeader)
+  <:> mkOptProp "Value" (mkList1 importHeader)
 
 (*| importHeader                                            |*)
 (*|     : IMPORT identifier (DOT MULT | importAlias)? semi? |*)
@@ -113,26 +115,154 @@ and topLevelObject () =
 (*|     | propertyDeclaration |*)
 (*|     | typeAlias           |*)
 (*|     ;                     |*)
+and declaration () =
+  classDeclaration ()
+  (* <!> objectDeclaration
+  <!> functionDeclaration
+  <!> propertyDeclaration
+  <!> typeAlias *)
 
 (*| SECTION: classes |*)
 
+(*| classDeclaration                                          |*)
+(*|     : modifiers? (CLASS | INTERFACE) NL* simpleIdentifier |*)
+(*|     (NL* typeParameters)? (NL* primaryConstructor)?       |*)
+(*|     (NL* COLON NL* delegationSpecifiers)?                 |*)
+(*|     (NL* typeConstraints)?                                |*)
+(*|     (NL* classBody | NL* enumClassBody)?                  |*)
+(*|     ;                                                     |*)
+and classDeclaration () =
+  mkNode "ClassDeclaration"
+  <* (class' <|> interface)
+  <* skip_many nl
+  <:> mkPropE "ClassName" simpleIdentifier
+  <:> mkOptPropE "TypeParameters" typeParameters
+
+(*| typeParameters                                                         |*)
+(*|   : LANGLE NL* typeParameter (NL* COMMA NL* typeParameter)* NL* RANGLE |*)
+(*|   ;                                                                    |*)
+and typeParameters () =
+  langle
+  *> (commaSep typeParameter)
+  <* skip_many nl
+  <* rangle
+
+(*| typeParameter                                                          |*)
+(*|   : typeParameterModifiers? NL* simpleIdentifier (NL* COLON NL* type)? |*)
+(*|   ;                                                                    |*)
+and typeParameter () =
+  mkNode "TypeParameter"
+  <:> mkOptPropEmptyE typeParameterModifiers
+  <* skip_many nl
+  <:> mkPropE "Identifier" simpleIdentifier
+  <:> mkOptProp "Type" (colon *> (fix type'))
+
 (*| SECTION: classMembers |*)
+
+(*| parameter                                 |*)
+(*|     : simpleIdentifier NL* COLON NL* type |*)
+(*|     ;                                     |*)
+and parameter () =
+  mkNode "Parameter"
+  <:> mkPropE "Identifier" simpleIdentifier
+  <:> mkProp "Type" (colon *> (fix type'))
 
 (*| SECTION: enumClasses |*)
 
 (*| SECTION: types |*)
 
+(*| type                    |*)
+(*|     : typeModifiers?    |*)
+(*|     ( parenthesizedType |*)
+(*|     | nullableType      |*)
+(*|     | typeReference     |*)
+(*|     | functionType)     |*)
+(*|     ;                   |*)
+and type' _ =
+  mkNode "Type"
+  <:> mkOptPropEmptyE typeModifiers
+  <:> mkProp "Value" (
+    functionType ()
+    <!> nullableType
+    <!> parenthesizedType
+    <!> typeReference
+  )
+
+(*| typeReference  |*)
+(*|     : userType |*)
+(*|     | DYNAMIC  |*)
+(*|     ;          |*)
+and typeReference () =
+  mkNode "TypeReference"
+  <:> (
+    mkBoolProp "DynamicModifier" dynamic
+    <|> mkPropE "Value" userType
+  )
+
+(*| nullableType                                         |*)
+(*|     : (typeReference | parenthesizedType) NL* quest+ |*)
+(*|     ;                                                |*)
+and nullableType () =
+  parenthesizedType ()
+  <!> typeReference
+  <:> mkBoolProp "Nullable" (skip_many1 quest)
+
+(*| parenthesizedType                |*)
+(*|     : LPAREN NL* type NL* RPAREN |*)
+(*|     ;                            |*)
+and parenthesizedType () =
+  lparen
+  *> (fix type')
+  <* rparen
+
+(*| receiverType            |*)
+(*|     : typeModifiers?    |*)
+(*|     ( parenthesizedType |*)
+(*|     | nullableType      |*)
+(*|     | typeReference)    |*)
+(*|     ;                   |*)
+and receiverType () =
+  mkNode "ReceiverType"
+  <:> mkOptPropEmptyE typeModifiers
+  <:> mkProp "Value" (
+    nullableType ()
+    <!> parenthesizedType
+    <!> typeReference
+  )
+
 (*| userType                                           |*)
 (*|     : simpleUserType (NL* DOT NL* simpleUserType)* |*)
 (*|     ;                                              |*)
 and userType () =
-  mkList1 (simpleUserType) (* TODO *)
+  sep_by1 dot (simpleUserType ())
+  >>= concatStringNodes "."
 
 (*| simpleUserType                              |*)
 (*|     : simpleIdentifier (NL* typeArguments)? |*)
 (*|     ;                                       |*)
-and simpleUserType () = 
-  identifier ()  (* TODO *)
+and simpleUserType () =
+  simpleIdentifier ()  (* TODO *)
+
+(*| functionType                                                                 |*)
+(*|     : (receiverType NL* DOT NL* )? functionTypeParameters NL* ARROW NL* type |*)
+(*|     ;                                                                        |*)
+and functionType () =
+  mkNode "FunctionType"
+  <:> mkOptProp "ReceiverType" (receiverType () <* dot)
+  <:> mkPropE "Parameters" functionTypeParameters
+  <* arrow
+  <:> mkProp "ReturnType" (fix type')
+
+(*| functionTypeParameters                                                              |*)
+(*|     : LPAREN NL* (parameter | type)? (NL* COMMA NL* (parameter | type))* NL* RPAREN |*)
+(*|     ;                                                                               |*)
+and functionTypeParameters () =
+  lparen
+  *> mkOpt (commaSep (fun () ->
+      parameter () <|> (fix type')
+    )
+  )
+  <* rparen
 
 (*| SECTION: statements |*)
 
@@ -141,37 +271,88 @@ and simpleUserType () =
 (*|     | LPAREN NL* valueArgument (NL* COMMA NL* valueArgument)* NL* RPAREN |*)
 (*|     ;                                                                    |*)
 and valueArguments () =
-  lparen 
-  *> skip_many (fix nl) 
-  *> mkOpt (commaSep valueArgument) 
-  <* skip_many (fix nl) 
+  lparen
+  *> mkOpt (commaSep valueArgument)
   <* rparen
 
 (*| valueArgument                                                                      |*)
 (*|     : annotation? NL* (simpleIdentifier NL* ASSIGNMENT NL* )? MULT? NL* expression |*)
 (*|     ;                                                                              |*)
-and valueArgument () = 
+and valueArgument () =
   identifier ()  (* TODO *)
 
 (*| SECTION: expressions |*)
 
 (*| SECTION: modifiers |*)
 
+(*| typeModifiers       |*)
+(*|     : typeModifier+ |*)
+(*|     ;               |*)
+and typeModifiers () =
+  many1 typeModifier >>= fun mods ->
+    List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+
+(*| typeModifier                   |*)
+(*|     : annotation | SUSPEND NL* |*)
+(*|     ;                          |*)
+and typeModifier () =
+  (* annotation <|> *) (* TODO *)
+  mkBoolProp "SuspendModifier" suspend
+  <* skip_many nl
+
+(*| varianceModifier |*)
+(*|     : IN         |*)
+(*|     | OUT        |*)
+(*|     ;            |*)
+and varianceModifier () =
+  mkBoolProp "VarianceModifierIn" in'
+  <|> mkBoolProp "VarianceModifierOut" out
+
+(*| typeParameterModifiers       |*)
+(*|     : typeParameterModifier+ |*)
+(*|     ;                        |*)
+and typeParameterModifiers () =
+  many1 typeParameterModifier >>= fun mods ->
+    List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+
+(*| typeParameterModifier         |*)
+(*|     : reificationModifier NL* |*)
+(*|     | varianceModifier NL*    |*)
+(*|     | annotation              |*)
+(*|     ;                         |*)
+and typeParameterModifier () =
+  reificationModifier () <* skip_many nl
+  <|> varianceModifier () <* skip_many nl
+  (* <!> annotation *) (* TODO *)
+
+(*| reificationModifier |*)
+(*|     : REIFIED       |*)
+(*|     ;               |*)
+and reificationModifier () = mkBoolProp "ReificationModifier" reified
+
 (*| SECTION: annotations |*)
 
 (*| annotation                                                             |*)
 (*|     : (singleAnnotation | multiAnnotation) NL*                         |*)
 (*|     ;                                                                  |*)
+and annotation () =
+  singleAnnotation ()
+  <!> multiAnnotation
+  <* skip_many nl
 
 (*| singleAnnotation                                                       |*)
 (*|     : annotationUseSiteTarget NL* unescapedAnnotation                  |*)
 (*|     | AT unescapedAnnotation                                           |*)
 (*|     ;                                                                  |*)
+and singleAnnotation () =
+  unescapedAnnotation () (* TODO *)
 
 (*| multiAnnotation                                                        |*)
 (*|     : annotationUseSiteTarget NL* LSQUARE unescapedAnnotation+ RSQUARE |*)
 (*|     | AT LSQUARE unescapedAnnotation+ RSQUARE                          |*)
 (*|     ;                                                                  |*)
+and multiAnnotation () =
+  unescapedAnnotation () (* TODO *)
 
 (*| annotationUseSiteTarget                                                |*)
 (*|     : ANNOTATION_USE_SITE_TARGET_FIELD                                 |*)
@@ -188,16 +369,16 @@ and valueArgument () =
 (*|    : constructorInvocation |*)
 (*|    | userType              |*)
 (*|    ;                       |*)
-and unescapedAnnotation () = 
+and unescapedAnnotation () =
   constructorInvocation ()
   <!> userType
 
 (*| constructorInvocation         |*)
 (*|     : userType valueArguments |*)
 (*|     ;                         |*)
-and constructorInvocation () = 
+and constructorInvocation () =
   mkNode "ConstructorInvocation"
-  <:> mkPropE "Identifier" identifier
+  <:> mkPropE "Identifier" userType (* TODO *)
 
 (*| SECTION: identifiers |*)
 
@@ -252,8 +433,9 @@ and simpleIdentifier () =
 (*| identifier                                         |*)
 (*|     : simpleIdentifier (NL* DOT simpleIdentifier)* |*)
 (*|     ;                                              |*)
-and identifier () = 
-  simpleIdentifier ()
+and identifier () =
+  sep_by1 dot (simpleIdentifier ())
+  >>= concatStringNodes "."
 
 let parse file input =
   isParsingPattern := false;

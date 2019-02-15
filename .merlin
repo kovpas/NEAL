@@ -29,6 +29,6 @@ B src/providers/swift/_build/parsing
 B src/reporters/arc/_build
 B src/reporters/cli/_build
 
-PKG findlib menhirLib core yojson cmdliner camlp4
+PKG findlib menhirLib core yojson cmdliner camlp4 angstrom
 
 EXT camlp4

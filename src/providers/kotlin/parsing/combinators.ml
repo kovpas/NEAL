@@ -301,6 +301,14 @@ let optSemi =
           fail ("missing linebreak or semicolon")
   )
 
+let concatStringNodes s nodes =
+  let aux = fun nodes ->
+    match nodes with
+    | NodeHolder(_, Node(_, _, [(_, String s)])) -> s
+    | _ -> ""
+  in
+  mkString (String.concat s (List.map aux nodes))
+
 (* Pattern helpers *)
 
 let isParsingPattern = ref false

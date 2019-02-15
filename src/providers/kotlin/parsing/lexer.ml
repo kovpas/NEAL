@@ -30,7 +30,7 @@ let rec lexer = ()
 (*| ShebangLine             |*)
 (*|     : '#!' ~[\r\n]*     |*)
 (*|     ;                   |*)
-and shebangLine' _ = 
+and shebangLine' _ =
   mkNode "ShebangLine"
   <* string "#!"
   <:> mkProp "Value" (
@@ -43,7 +43,7 @@ and shebangLine' _ =
     )
 
 (*| NL: '\n' | '\r' '\n'?; |*)
-and nl _ = linebreak
+and nl = linebreak
 
 (*| SECTION: separatorsAndOperations |*)
 
@@ -83,6 +83,7 @@ and colon = wchar ':'
 (*| DIV_ASSIGNMENT: '/=';                                     |*)
 (*| MOD_ASSIGNMENT: '%=';                                     |*)
 (*| ARROW: '->';                                              |*)
+and arrow = wstring "->"
 (*| DOUBLE_ARROW: '=>';                                       |*)
 (*| RANGE: '..';                                              |*)
 (*| COLONCOLON: '::';                                         |*)
@@ -91,8 +92,11 @@ and colon = wchar ':'
 (*| AT: '@';                                                  |*)
 (*| QUEST_WS: '?' Hidden;                                     |*)
 (*| QUEST_NO_WS: '?';                                         |*)
+and quest = wchar '?'
 (*| LANGLE: '<';                                              |*)
+and langle = wchar '<'
 (*| RANGLE: '>';                                              |*)
+and rangle = wchar '>'
 (*| LE: '<=';                                                 |*)
 (*| GE: '>=';                                                 |*)
 (*| EXCL_EQ: '!=';                                            |*)
@@ -105,22 +109,91 @@ and colon = wchar ':'
 (*| SECTION: keywords |*)
 
 (*| ANNOTATION_USE_SITE_TARGET_FILE: '@file' NL* COLON; |*)
-and annotation_use_site_target_file _ = 
+and annotation_use_site_target_file () =
   mkNode "AnnotationFile"
   <* string "@file"
-  <* skip_many (fix nl)
+  <* skip_many nl
   <* colon
 
 (*| PACKAGE: 'package'; |*)
 and package = wstring "package"
-
 (*| IMPORT: 'import'; |*)
 and import = wstring "import"
-
+(*| CLASS: 'class';             |*)
+and class' = wstring "class"
+(*| INTERFACE: 'interface';     |*)
+and interface = wstring "interface"
+(*| FUN: 'fun';                 |*)
+(*| OBJECT: 'object';           |*)
+(*| VAL: 'val';                 |*)
+(*| VAR: 'var';                 |*)
+(*| TYPE_ALIAS: 'typealias';    |*)
+(*| CONSTRUCTOR: 'constructor'; |*)
+(*| BY: 'by';                   |*)
+(*| COMPANION: 'companion';     |*)
+(*| INIT: 'init';               |*)
+(*| THIS: 'this';               |*)
+(*| SUPER: 'super';             |*)
+(*| TYPEOF: 'typeof';           |*)
+(*| WHERE: 'where';             |*)
+(*| IF: 'if';                   |*)
+(*| ELSE: 'else';               |*)
+(*| WHEN: 'when';               |*)
+(*| TRY: 'try';                 |*)
+(*| CATCH: 'catch';             |*)
+(*| FINALLY: 'finally';         |*)
+(*| FOR: 'for';                 |*)
+(*| DO: 'do';                   |*)
+(*| WHILE: 'while';             |*)
+(*| THROW: 'throw';             |*)
+(*| RETURN: 'return';           |*)
+(*| CONTINUE: 'continue';       |*)
+(*| BREAK: 'break';             |*)
 (*| AS: 'as'; |*)
 and as' = wstring "as"
+(*| IS: 'is';                   |*)
+(*| IN: 'in';                   |*)
+and in' = wstring "in"
+(*| NOT_IS: '!is' (Hidden | NL);|*)
+(*| NOT_IN: '!in' (Hidden | NL);|*)
+(*| OUT: 'out';                 |*)
+and out = wstring "out"
+(*| GETTER: 'get';              |*)
+(*| SETTER: 'set';              |*)
+(*| DYNAMIC: 'dynamic';         |*)
+and dynamic = wstring "dynamic"
 
 (*| SECTION: lexicalModifiers |*)
+
+(*| PUBLIC: 'public';           |*)
+(*| PRIVATE: 'private';         |*)
+(*| PROTECTED: 'protected';     |*)
+(*| INTERNAL: 'internal';       |*)
+(*| ENUM: 'enum';               |*)
+(*| SEALED: 'sealed';           |*)
+(*| ANNOTATION: 'annotation';   |*)
+(*| DATA: 'data';               |*)
+(*| INNER: 'inner';             |*)
+(*| TAILREC: 'tailrec';         |*)
+(*| OPERATOR: 'operator';       |*)
+(*| INLINE: 'inline';           |*)
+(*| INFIX: 'infix';             |*)
+(*| EXTERNAL: 'external';       |*)
+(*| SUSPEND: 'suspend';         |*)
+and suspend = wstring "suspend"
+(*| OVERRIDE: 'override';       |*)
+(*| ABSTRACT: 'abstract';       |*)
+(*| FINAL: 'final';             |*)
+(*| OPEN: 'open';               |*)
+(*| CONST: 'const';             |*)
+(*| LATEINIT: 'lateinit';       |*)
+(*| VARARG: 'vararg';           |*)
+(*| NOINLINE: 'noinline';       |*)
+(*| CROSSINLINE: 'crossinline'; |*)
+(*| REIFIED: 'reified';         |*)
+and reified = wstring "reified"
+(*| EXPECT: 'expect';           |*)
+(*| ACTUAL: 'actual';           |*)
 
 (*| SECTION: lexicalIdentifiers |*)
 
@@ -133,9 +206,9 @@ and unicodeDigit () = unicode_class_nd ()
 (*|     ;                                                                                 |*)
 and identifier' pos =
   (
-    List.cons <$> (letter' () <|> char '_') 
-      <*> (option [] (many1 
-        (fun () -> 
+    List.cons <$> (letter' () <|> char '_')
+      <*> (option [] (many1
+        (fun () ->
           letter' () <|> char '_' <|> unicodeDigit ()
         )
       )
@@ -145,7 +218,7 @@ and identifier' pos =
 
 (*| SECTION: characters |*)
 
-and letter' () = 
+and letter' () =
   unicode_class_ll ()
   <!> unicode_class_lm
   <!> unicode_class_lo
