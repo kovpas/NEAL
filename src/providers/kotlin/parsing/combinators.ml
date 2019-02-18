@@ -236,7 +236,6 @@ let lhsOperatorWhitespace = operatorWhitespace true
 let rhsOperatorWhitespace = operatorWhitespace false
 
 let wstring' s =
-  pos >>= fun pos ->
   anyspace *> string s
 
 let wfstring s =

@@ -92,7 +92,7 @@ and importHeader () =
   mkNode "ImportHeader"
   <* import
   <:> mkPropE "Name" identifier
-  <:> mkOptPropE "Alias" importAlias
+  <:> (mkBoolProp "StarImport" (dot <* mult) <|> mkOptPropE "Alias" importAlias)
   <* optSemi
 
 (*| importAlias               |*)
@@ -131,12 +131,79 @@ and declaration () =
 (*|     (NL* typeConstraints)?                                |*)
 (*|     (NL* classBody | NL* enumClassBody)?                  |*)
 (*|     ;                                                     |*)
-and classDeclaration () =
-  mkNode "ClassDeclaration"
-  <* (class' <|> interface)
-  <* skip_many nl
-  <:> mkPropE "ClassName" simpleIdentifier
-  <:> mkOptPropE "TypeParameters" typeParameters
+and classDeclaration () = (* TODO *)
+  mkOptPropEmptyE modifiers >>= fun mods ->
+    ((class' *> mkNode "ClassDeclaration") <|> (interface *> mkNode "InterfaceDeclaration"))
+    <:> (return mods)
+    <:> mkPropE "Name" simpleIdentifier
+    <:> mkOptPropE "TypeParameters" typeParameters
+    <:> mkOptPropE "PrimaryConstructor" primaryConstructor
+    <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
+    <:> mkOptPropE "TypeConstraints" typeConstraints
+
+(*| primaryConstructor                                   |*)
+(*|     : (modifiers? CONSTRUCTOR NL* )? classParameters |*)
+(*|     ;                                                |*)
+and primaryConstructor () =
+  mkNode "PrimaryConstructor"
+  <:> mkOptPropEmpty (modifiers () <* constructor)
+  <:> mkPropE "ClassParameters" classParameters
+
+(*| classParameters                                                                |*)
+(*|     : LPAREN NL* (classParameter (NL* COMMA NL* classParameter)* )? NL* RPAREN |*)
+(*|     ;                                                                          |*)
+and classParameters () =
+  lparen *> mkOpt (commaSep classParameter) <* rparen
+
+(*| classParameter                                                                                     |*)
+(*|     : modifiers? (VAL | VAR)? NL* simpleIdentifier COLON NL* type (NL* ASSIGNMENT NL* expression)? |*)
+(*|     ;                                                                                              |*)
+and classParameter () =
+  mkNode "ClassParameter"
+  <:> mkOptPropEmptyE modifiers
+  <:> mkOptPropEmpty (
+    mkBoolProp "Variable" var
+    <|> mkBoolProp "Constant" val'
+  )
+  <:> mkProp "Identifier" (simpleIdentifier () <* colon)
+  <:> mkProp "Type" (fix type')
+  <:> mkOptPropEmpty (assignment *> mkProp "DefaultValue" (fix expression))
+
+(*| delegationSpecifiers                                                           |*)
+(*|   : annotatedDelegationSpecifier (NL* COMMA NL* annotatedDelegationSpecifier)* |*)
+(*|   ;                                                                            |*)
+and delegationSpecifiers () =
+  commaSep annotatedDelegationSpecifier
+
+(*| delegationSpecifier       |*)
+(*|   : constructorInvocation |*)
+(*|   | explicitDelegation    |*)
+(*|   | userType              |*)
+(*|   | functionType          |*)
+(*|   ;                       |*)
+and delegationSpecifier () =
+  explicitDelegation ()
+  <!> constructorInvocation
+  <!> userType
+  <!> functionType
+
+(*| constructorInvocation       |*)
+(*|   : userType valueArguments |*)
+(*|   ;                         |*)
+
+(*| annotatedDelegationSpecifier            |*)
+(*|   : annotation* NL* delegationSpecifier |*)
+(*|   ;                                     |*)
+and annotatedDelegationSpecifier () = (* TODO *)
+  delegationSpecifier ()
+
+(*| explicitDelegation                                    |*)
+(*|     : (userType | functionType) NL* BY NL* expression |*)
+(*|     ;                                                 |*)
+and explicitDelegation () =
+  mkNode "ExplicitDelegation"
+  <:> mkProp "Type" (userType () <!> functionType)
+  <:> mkProp "Expression" (by *> fix expression)
 
 (*| typeParameters                                                         |*)
 (*|   : LANGLE NL* typeParameter (NL* COMMA NL* typeParameter)* NL* RANGLE |*)
@@ -156,6 +223,21 @@ and typeParameter () =
   <* skip_many nl
   <:> mkPropE "Identifier" simpleIdentifier
   <:> mkOptProp "Type" (colon *> (fix type'))
+
+(*| typeConstraints                                                |*)
+(*|     : WHERE NL* typeConstraint (NL* COMMA NL* typeConstraint)* |*)
+(*|     ;                                                          |*)
+and typeConstraints () =
+  where *> commaSep typeConstraint
+
+(*| typeConstraint                                        |*)
+(*|     : annotation* simpleIdentifier NL* COLON NL* type |*)
+(*|     ;                                                 |*)
+and typeConstraint () = (* TODO *)
+  mkNode "TypeConstraint"
+  <:> mkPropE "SubType" simpleIdentifier
+  <* colon
+  <:> mkProp "SuperType" (fix type')
 
 (*| SECTION: classMembers |*)
 
@@ -179,13 +261,12 @@ and parameter () =
 (*|     | functionType)     |*)
 (*|     ;                   |*)
 and type' _ =
-  mkNode "Type"
-  <:> mkOptPropEmptyE typeModifiers
-  <:> mkProp "Value" (
+  mkOptPropEmptyE typeModifiers >>= (fun mods ->
     functionType ()
     <!> nullableType
     <!> parenthesizedType
     <!> typeReference
+    <:> (return mods)
   )
 
 (*| typeReference  |*)
@@ -205,15 +286,58 @@ and typeReference () =
 and nullableType () =
   parenthesizedType ()
   <!> typeReference
-  <:> mkBoolProp "Nullable" (skip_many1 quest)
+  <:> mkBoolProp "Nullable" (skip_many1 (quest ()))
 
-(*| parenthesizedType                |*)
-(*|     : LPAREN NL* type NL* RPAREN |*)
-(*|     ;                            |*)
-and parenthesizedType () =
-  lparen
-  *> (fix type')
-  <* rparen
+(*| quest             |*)
+(*|     : QUEST_NO_WS |*)
+(*|     | QUEST_WS    |*)
+(*|     ;             |*)
+and quest () =
+  questNoWs <|> questWs
+
+(*| userType                                           |*)
+(*|     : simpleUserType (NL* DOT NL* simpleUserType)* |*)
+(*|     ;                                              |*)
+and userType () =
+  mkNode "UserType"
+  <:> mkOptProp "Types" (sep_by1 dot (simpleUserType ()) >>= toList)
+
+(*| simpleUserType                              |*)
+(*|     : simpleIdentifier (NL* typeArguments)? |*)
+(*|     ;                                       |*)
+and simpleUserType () =
+  simpleIdentifier ()
+  <:> mkOptPropE "TypeArguments" typeArguments
+
+(*| typeProjection                             |*)
+(*|     : typeProjectionModifiers? type | MULT |*)
+(*|     ;                                      |*)
+and typeProjection () =
+  (mkNode "StarProjection" <* mult)
+  <|>
+  (mkNode "TypeProjection"
+    <:> (mkOptPropEmptyE typeProjectionModifiers >>= fun mods ->
+      mkProp "Type" (
+        fix type'
+        <:> (return mods)
+      )
+    )
+  )
+
+(*| typeProjectionModifiers       |*)
+(*|     : typeProjectionModifier+ |*)
+(*|     ;                         |*)
+and typeProjectionModifiers () =
+  many1 typeProjectionModifier >>= fun mods ->
+    List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+
+(*| typeProjectionModifier     |*)
+(*|     : varianceModifier NL* |*)
+(*|     | annotation           |*)
+(*|     ;                      |*)
+and typeProjectionModifier () = (* TODO *)
+  varianceModifier ()
+  (* <!> annotation *)
 
 (*| receiverType            |*)
 (*|     : typeModifiers?    |*)
@@ -222,26 +346,20 @@ and parenthesizedType () =
 (*|     | typeReference)    |*)
 (*|     ;                   |*)
 and receiverType () =
-  mkNode "ReceiverType"
-  <:> mkOptPropEmptyE typeModifiers
-  <:> mkProp "Value" (
+  mkOptPropEmptyE typeModifiers >>= (fun mods ->
     nullableType ()
     <!> parenthesizedType
     <!> typeReference
+    <:> (return mods)
   )
 
-(*| userType                                           |*)
-(*|     : simpleUserType (NL* DOT NL* simpleUserType)* |*)
-(*|     ;                                              |*)
-and userType () =
-  sep_by1 dot (simpleUserType ())
-  >>= concatStringNodes "."
-
-(*| simpleUserType                              |*)
-(*|     : simpleIdentifier (NL* typeArguments)? |*)
-(*|     ;                                       |*)
-and simpleUserType () =
-  simpleIdentifier ()  (* TODO *)
+(*| parenthesizedType                |*)
+(*|     : LPAREN NL* type NL* RPAREN |*)
+(*|     ;                            |*)
+and parenthesizedType () =
+  lparen
+  *> (fix type')
+  <* rparen
 
 (*| functionType                                                                 |*)
 (*|     : (receiverType NL* DOT NL* )? functionTypeParameters NL* ARROW NL* type |*)
@@ -266,6 +384,12 @@ and functionTypeParameters () =
 
 (*| SECTION: statements |*)
 
+(*| label                  |*)
+(*|     : IdentifierAt NL* |*)
+(*|     ;                  |*)
+and label () =
+  identifierAt ()
+
 (*| valueArguments                                                           |*)
 (*|     : LPAREN NL* RPAREN                                                  |*)
 (*|     | LPAREN NL* valueArgument (NL* COMMA NL* valueArgument)* NL* RPAREN |*)
@@ -283,7 +407,532 @@ and valueArgument () =
 
 (*| SECTION: expressions |*)
 
+(*| expression        |*)
+(*|     : disjunction |*)
+(*|     ;             |*)
+and expression _ =
+  disjunction ()
+
+and auxExpression name op expr =
+  (
+    mkNode name
+    <:> mkPropE "Lhs" expr
+    <:> mkProp "Operator" (op >>= mkString)
+    <:> mkPropE "Rhs" expr
+  )
+  <!> expr
+
+(*| disjunction                                   |*)
+(*|     : conjunction (NL* DISJ NL* conjunction)* |*)
+(*|     ;                                         |*)
+and disjunction () =
+  auxExpression "BinaryExpression" disj conjunction
+
+(*| conjunction                             |*)
+(*|     : equality (NL* CONJ NL* equality)* |*)
+(*|     ;                                   |*)
+and conjunction () =
+  auxExpression "BinaryExpression" conj equality
+
+(*| equality                                            |*)
+(*|     : comparison (equalityOperator NL* comparison)* |*)
+(*|     ;                                               |*)
+and equality () =
+  auxExpression "ComparisonExpression" (equalityOperator ()) comparison
+
+(*| comparison                                                  |*)
+(*|   : infixOperation (comparisonOperator NL* infixOperation)? |*)
+(*|   ;                                                         |*)
+and comparison () =
+  auxExpression "ComparisonExpression" (comparisonOperator ()) infixOperation
+
+(*| infixOperation                                                              |*)
+(*|   : elvisExpression (inOperator NL* elvisExpression | isOperator NL* type)* |*)
+(*|   ;                                                                         |*)
+and infixOperation () =
+  let aux = fun op expr ->
+    mkProp "Operator" ((op ()) >>= mkString)
+    <:> mkPropE "Rhs" elvisExpression
+  in
+  mkNode "InfixOperation"
+  <:> mkPropE "Lhs" elvisExpression
+  <:> (
+    aux inOperator elvisExpression
+   <|> aux isOperator (fun () -> fix type')
+  )
+  <!> elvisExpression
+
+(*| elvisExpression                                          |*)
+(*|   : infixFunctionCall (NL* elvis NL* infixFunctionCall)* |*)
+(*|   ;                                                      |*)
+and elvisExpression () =
+  auxExpression "ElvisExpression" (elvis ()) infixFunctionCall
+
+(*| elvis                 |*)
+(*|   : QUEST_NO_WS COLON |*)
+(*|   ;                   |*)
+and elvis () =
+  questNoWs <* colon
+
+(*| infixFunctionCall                                           |*)
+(*|   : rangeExpression (simpleIdentifier NL* rangeExpression)* |*)
+(*|   ;                                                         |*)
+and infixFunctionCall () =
+  (
+    mkNode "InfixFunctionCall"
+    <:> mkPropE "Lhs" rangeExpression
+    <:> mkPropE "Identifier" simpleIdentifier
+    <:> mkPropE "Rhs" rangeExpression
+  )
+  <!> rangeExpression
+
+(*| rangeExpression                                        |*)
+(*|   : additiveExpression (RANGE NL* additiveExpression)* |*)
+(*|   ;                                                    |*)
+and rangeExpression () =
+  auxExpression "RangeExpression" range additiveExpression
+
+(*| additiveExpression                                                            |*)
+(*|   : multiplicativeExpression (additiveOperator NL* multiplicativeExpression)* |*)
+(*|   ;                                                                           |*)
+and additiveExpression () =
+  auxExpression "AdditiveExpression" (additiveOperator ()) multiplicativeExpression
+
+(*| multiplicativeExpression                                    |*)
+(*|   : asExpression (multiplicativeOperator NL* asExpression)* |*)
+(*|   ;                                                         |*)
+and multiplicativeExpression () =
+  auxExpression "MultiplicativeExpression" (multiplicativeOperator ()) asExpression
+
+(*| asExpression                                         |*)
+(*|   : prefixUnaryExpression (NL* asOperator NL* type)? |*)
+(*|   ;                                                  |*)
+and asExpression () =
+  (
+    mkNode "AsExpression"
+    <:> mkPropE "Lhs" prefixUnaryExpression
+    <:> mkProp "Operator" (asOperator () >>= mkString)
+    <:> mkProp "Rhs" (fix type')
+  )
+  <!> prefixUnaryExpression
+
+(*| prefixUnaryExpression                   |*)
+(*|   : unaryPrefix* postfixUnaryExpression |*)
+(*|   ;                                     |*)
+and prefixUnaryExpression () =
+  mkNode "PrefixUnaryExpression"
+  <:> mkOptProp "Prefixes" (mkList1 unaryPrefix)
+  <:> mkPropE "Expression" postfixUnaryExpression
+
+(*| unaryPrefix                 |*)
+(*|   : annotation              |*)
+(*|   | label                   |*)
+(*|   | prefixUnaryOperator NL* |*)
+(*|   ;                         |*)
+and unaryPrefix () =
+  (* annotation () <!>  *)
+  label ()
+  <!> prefixUnaryOperator
+
+(*| postfixUnaryExpression                    |*)
+(*|   : primaryExpression                     |*)
+(*|   | primaryExpression postfixUnarySuffix+ |*)
+(*|   ;                                       |*)
+and postfixUnaryExpression () =
+  mkNode "PostfixUnaryExpression"
+  <:> mkPropE "Expression" primaryExpression
+  <:> mkOptProp "Suffixes" (mkList1 postfixUnarySuffix)
+
+(*| postfixUnarySuffix       |*)
+(*|   : postfixUnaryOperator |*)
+(*|   | typeArguments        |*)
+(*|   | callSuffix           |*)
+(*|   | indexingSuffix       |*)
+(*|   | navigationSuffix     |*)
+(*|   ;                      |*)
+and postfixUnarySuffix () =
+  mkNode "PostfixUnarySuffix"
+  <:> (mkPropE "UnaryOperator" postfixUnaryOperator
+    <|> mkPropE "TypeArguments" typeArguments
+    <|> mkPropE "CallSuffix" callSuffix
+    <|> mkPropE "IndexingSuffix" indexingSuffix
+    <|> mkPropE "NavigationSuffix" navigationSuffix
+  )
+
+(*| directlyAssignableExpression                |*)
+(*|   : postfixUnaryExpression assignableSuffix |*)
+(*|   | simpleIdentifier                        |*)
+(*|   ;                                         |*)
+
+(*| assignableExpression      |*)
+(*|   : prefixUnaryExpression |*)
+(*|   ;                       |*)
+
+(*| assignableSuffix     |*)
+(*|   : typeArguments    |*)
+(*|   | indexingSuffix   |*)
+(*|   | navigationSuffix |*)
+(*|   ;                  |*)
+
+(*| indexingSuffix                                                     |*)
+(*|   : LSQUARE NL* expression (NL* COMMA NL* expression)* NL* RSQUARE |*)
+(*|   ;                                                                |*)
+and indexingSuffix () =
+  lsquare
+  *> commaSep (fun () -> fix expression)
+  <* skip_many nl
+  <* rsquare
+
+(*| navigationSuffix                                                                      |*)
+(*|   : NL* memberAccessOperator NL* (simpleIdentifier | parenthesizedExpression | CLASS) |*)
+(*|   ;                                                                                   |*)
+and navigationSuffix () =
+  memberAccessOperator ()
+  <* (
+    (class' >>= mkString)
+    <!> simpleIdentifier
+    <!> parenthesizedExpression
+  )
+
+(*| callSuffix                                         |*)
+(*|   : typeArguments? valueArguments? annotatedLambda |*)
+(*|   | typeArguments? valueArguments                  |*)
+(*|   ;                                                |*)
+and callSuffix () = (* TODO *)
+  mkOptE typeArguments
+  <* valueArguments ()
+
+(*| annotatedLambda                          |*)
+(*|   : annotation* label? NL* lambdaLiteral |*)
+(*|   ;                                      |*)
+
+(*| typeArguments                                                            |*)
+(*|   : LANGLE NL* typeProjection (NL* COMMA NL* typeProjection)* NL* RANGLE |*)
+(*|   ;                                                                      |*)
+and typeArguments () =
+  langle
+  *> (commaSep typeProjection)
+  <* skip_many nl
+  <* rangle
+
+(*| valueArguments                                                         |*)
+(*|   : LPAREN NL* RPAREN                                                  |*)
+(*|   | LPAREN NL* valueArgument (NL* COMMA NL* valueArgument)* NL* RPAREN |*)
+(*|   ;                                                                    |*)
+
+(*| valueArgument                                                                    |*)
+(*|   : annotation? NL* (simpleIdentifier NL* ASSIGNMENT NL* )? MULT? NL* expression |*)
+(*|   ;                                                                              |*)
+
+(*| primaryExpression            |*)
+(*|   : parenthesizedExpression  |*)
+(*|   | simpleIdentifier         |*)
+(*|   | literalConstant          |*)
+(*|   | stringLiteral            |*)
+(*|   | callableReference        |*)
+(*|   | functionLiteral          |*)
+(*|   | objectLiteral            |*)
+(*|   | collectionLiteral        |*)
+(*|   | thisExpression           |*)
+(*|   | superExpression          |*)
+(*|   | ifExpression             |*)
+(*|   | whenExpression           |*)
+(*|   | tryExpression            |*)
+(*|   | jumpExpression           |*)
+(*|   ;                          |*)
+and primaryExpression () =
+  mkNode "Expression"
+  <* parenthesizedExpression ()
+  <!> simpleIdentifier
+
+(*| parenthesizedExpression              |*)
+(*|   : LPAREN NL* expression NL* RPAREN |*)
+(*|   ;                                  |*)
+and parenthesizedExpression () =
+  lparen
+  *> (fix expression)
+  <* rparen
+
+(*| collectionLiteral                                                  |*)
+(*|   : LSQUARE NL* expression (NL* COMMA NL* expression)* NL* RSQUARE |*)
+(*|   | LSQUARE NL* RSQUARE                                            |*)
+(*|   ;                                                                |*)
+
+(*| literalConstant      |*)
+(*|   : BooleanLiteral   |*)
+(*|   | IntegerLiteral   |*)
+(*|   | HexLiteral       |*)
+(*|   | BinLiteral       |*)
+(*|   | CharacterLiteral |*)
+(*|   | RealLiteral      |*)
+(*|   | NullLiteral      |*)
+(*|   | LongLiteral      |*)
+(*|   | UnsignedLiteral  |*)
+(*|   ;                  |*)
+
+(*| stringLiteral              |*)
+(*|   : lineStringLiteral      |*)
+(*|   | multiLineStringLiteral |*)
+(*|   ;                        |*)
+
+(*| lineStringLiteral                                                      |*)
+(*|   : QUOTE_OPEN (lineStringContent | lineStringExpression)* QUOTE_CLOSE |*)
+(*|   ;                                                                    |*)
+
+(*| multiLineStringLiteral                                                                                                |*)
+(*|   : TRIPLE_QUOTE_OPEN (multiLineStringContent | multiLineStringExpression | MultiLineStringQuote)* TRIPLE_QUOTE_CLOSE |*)
+(*|   ;                                                                                                                   |*)
+
+(*| lineStringContent      |*)
+(*|   : LineStrText        |*)
+(*|   | LineStrEscapedChar |*)
+(*|   | LineStrRef         |*)
+(*|   ;                    |*)
+
+(*| lineStringExpression                  |*)
+(*|   : LineStrExprStart expression RCURL |*)
+(*|   ;                                   |*)
+
+(*| multiLineStringContent   |*)
+(*|   : MultiLineStrText     |*)
+(*|   | MultiLineStringQuote |*)
+(*|   | MultiLineStrRef      |*)
+(*|   ;                      |*)
+
+(*| multiLineStringExpression                          |*)
+(*|   : MultiLineStrExprStart NL* expression NL* RCURL |*)
+(*|   ;                                                |*)
+
+(*| lambdaLiteral                                                      |*)
+(*|   : LCURL NL* statements NL* RCURL                                 |*)
+(*|   | LCURL NL* lambdaParameters? NL* ARROW NL* statements NL* RCURL |*)
+(*|   ;                                                                |*)
+
+(*| lambdaParameters                                     |*)
+(*|   : lambdaParameter (NL* COMMA NL* lambdaParameter)* |*)
+(*|   ;                                                  |*)
+
+(*| lambdaParameter                                    |*)
+(*|   : variableDeclaration                            |*)
+(*|   | multiVariableDeclaration (NL* COLON NL* type)? |*)
+(*|   ;                                                |*)
+
+(*| anonymousFunction             |*)
+(*|   : FUN                       |*)
+(*|   (NL* type NL* DOT)?         |*)
+(*|   NL* functionValueParameters |*)
+(*|   (NL* COLON NL* type)?       |*)
+(*|   (NL* typeConstraints)?      |*)
+(*|   (NL* functionBody)?         |*)
+(*|   ;                           |*)
+
+(*| functionLiteral       |*)
+(*|   : lambdaLiteral     |*)
+(*|   | anonymousFunction |*)
+(*|   ;                   |*)
+
+(*| objectLiteral                                               |*)
+(*|   : OBJECT NL* COLON NL* delegationSpecifiers NL* classBody |*)
+(*|   | OBJECT NL* classBody                                    |*)
+(*|   ;                                                         |*)
+
+(*| thisExpression |*)
+(*|   : THIS       |*)
+(*|   | THIS_AT    |*)
+(*|   ;            |*)
+
+(*| superExpression                                                |*)
+(*|   : SUPER (LANGLE NL* type NL* RANGLE)? (AT simpleIdentifier)? |*)
+(*|   | SUPER_AT                                                   |*)
+(*|   ;                                                            |*)
+
+(*| ifExpression                                                                                                                         |*)
+(*|   : IF NL* LPAREN NL* expression NL* RPAREN NL* (controlStructureBody | SEMICOLON)                                                   |*)
+(*|   | IF NL* LPAREN NL* expression NL* RPAREN NL* controlStructureBody? NL* SEMICOLON? NL* ELSE NL* (controlStructureBody | SEMICOLON) |*)
+(*|   ;                                                                                                                                  |*)
+
+(*| whenSubject                                                                                     |*)
+(*|   : LPAREN (annotation* NL* VAL NL* variableDeclaration NL* ASSIGNMENT NL* )? expression RPAREN |*)
+(*|   ;                                                                                             |*)
+
+(*| whenExpression                                                      |*)
+(*|   : WHEN NL* whenSubject? NL* LCURL NL* (whenEntry NL* )* NL* RCURL |*)
+(*|   ;                                                                 |*)
+
+(*| whenEntry                                                                                 |*)
+(*|   : whenCondition (NL* COMMA NL* whenCondition)* NL* ARROW NL* controlStructureBody semi? |*)
+(*|   | ELSE NL* ARROW NL* controlStructureBody semi?                                         |*)
+(*|   ;                                                                                       |*)
+
+(*| whenCondition  |*)
+(*|   : expression |*)
+(*|   | rangeTest  |*)
+(*|   | typeTest   |*)
+(*|   ;            |*)
+
+(*| rangeTest                     |*)
+(*|   : inOperator NL* expression |*)
+(*|   ;                           |*)
+
+(*| typeTest                |*)
+(*|   : isOperator NL* type |*)
+(*|   ;                     |*)
+
+(*| tryExpression                                                                |*)
+(*|   : TRY NL* block ((NL* catchBlock)+ (NL* finallyBlock)? | NL* finallyBlock) |*)
+(*|   ;                                                                          |*)
+
+(*| catchBlock                                                                    |*)
+(*|   : CATCH NL* LPAREN annotation* simpleIdentifier COLON type RPAREN NL* block |*)
+(*|   ;                                                                           |*)
+
+(*| finallyBlock          |*)
+(*|   : FINALLY NL* block |*)
+(*|   ;                   |*)
+
+(*| jumpExpression                       |*)
+(*|   : THROW NL* expression             |*)
+(*|   | (RETURN | RETURN_AT) expression? |*)
+(*|   | CONTINUE | CONTINUE_AT           |*)
+(*|   | BREAK | BREAK_AT                 |*)
+(*|   ;                                  |*)
+
+(*| callableReference                                                 |*)
+(*|   : (receiverType? NL* COLONCOLON NL* (simpleIdentifier | CLASS)) |*)
+(*|   ;                                                               |*)
+
+(*| assignmentAndOperator |*)
+(*|   : ADD_ASSIGNMENT    |*)
+(*|   | SUB_ASSIGNMENT    |*)
+(*|   | MULT_ASSIGNMENT   |*)
+(*|   | DIV_ASSIGNMENT    |*)
+(*|   | MOD_ASSIGNMENT    |*)
+(*|   ;                   |*)
+and assignmentAndOperator () =
+  addAssignment <|> subAssignment <|> multAssignment <|> divAssignment <|> modAssignment
+
+(*| equalityOperator |*)
+(*|     : EXCL_EQ    |*)
+(*|     | EXCL_EQEQ  |*)
+(*|     | EQEQ       |*)
+(*|     | EQEQEQ     |*)
+(*|     ;            |*)
+and equalityOperator () =
+  exclEqEq <|> exclEq <|> eqEqEq <|> eqEq
+
+(*| comparisonOperator |*)
+(*|     : LANGLE       |*)
+(*|     | RANGLE       |*)
+(*|     | LE           |*)
+(*|     | GE           |*)
+(*|     ;              |*)
+and comparisonOperator () = (* TODO *)
+  (* langle <|> rangle <|>  *)
+  le <|> ge
+
+(*| inOperator        |*)
+(*|     : IN | NOT_IN |*)
+(*|     ;             |*)
+and inOperator () =
+  in' <|> notIn
+
+(*| isOperator        |*)
+(*|     : IS | NOT_IS |*)
+(*|     ;             |*)
+and isOperator () =
+  is <|> notIs
+
+(*| additiveOperator |*)
+(*|     : ADD | SUB  |*)
+(*|     ;            |*)
+and additiveOperator () =
+  add <|> sub
+
+(*| multiplicativeOperator |*)
+(*|     : MULT             |*)
+(*|     | DIV              |*)
+(*|     | MOD              |*)
+(*|     ;                  |*)
+and multiplicativeOperator () =
+  mult <|> div <|> mod'
+
+(*| asOperator    |*)
+(*|     : AS      |*)
+(*|     | AS_SAFE |*)
+(*|     ;         |*)
+and asOperator () =
+  as' <|> asSafe
+
+(*| prefixUnaryOperator |*)
+(*|     : INCR          |*)
+(*|     | DECR          |*)
+(*|     | SUB           |*)
+(*|     | ADD           |*)
+(*|     | excl          |*)
+(*|     ;               |*)
+and prefixUnaryOperator () =
+  (incr <|> decr <|> sub <|> add <|> excl ()) >>= mkString
+
+(*| postfixUnaryOperator  |*)
+(*|     : INCR            |*)
+(*|     | DECR            |*)
+(*|     | EXCL_NO_WS excl |*)
+(*|     ;                 |*)
+and postfixUnaryOperator () =
+  (incr <|> decr <|> (exclNoWs <* excl ())) >>= mkString
+
+(*| excl             |*)
+(*|     : EXCL_NO_WS |*)
+(*|     | EXCL_WS    |*)
+(*|     ;            |*)
+and excl () =
+  exclNoWs <|> exclWs
+
+(*| memberAccessOperator             |*)
+(*|     : DOT | safeNav | COLONCOLON |*)
+(*|     ;                            |*)
+and memberAccessOperator () =
+  (dot *> mkString ".")
+  <|> safeNav ()
+  <|> (colonColon >>= mkString)
+
+(*| safeNav               |*)
+(*|     : QUEST_NO_WS DOT |*)
+(*|     ;                 |*)
+and safeNav () =
+  (questNoWs <* dot) >>= mkString
+
 (*| SECTION: modifiers |*)
+
+(*| modifiers                      |*)
+(*|     : (annotation | modifier)+ |*)
+(*|     ;                          |*)
+and modifiers () =
+  many1 (fun () ->
+    (* annotation () <!>  *)
+    modifier ()
+  ) >>= fun mods ->
+    List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+
+(*| modifier                    |*)
+(*|     : (classModifier        |*)
+(*|     | memberModifier        |*)
+(*|     | visibilityModifier    |*)
+(*|     | functionModifier      |*)
+(*|     | propertyModifier      |*)
+(*|     | inheritanceModifier   |*)
+(*|     | parameterModifier     |*)
+(*|     | platformModifier) NL* |*)
+(*|     ;                       |*)
+and modifier () =
+  classModifier ()
+  <!> memberModifier
+  <!> visibilityModifier
+  <!> functionModifier
+  <!> propertyModifier
+  <!> inheritanceModifier
+  <!> parameterModifier
+  <!> platformModifier
 
 (*| typeModifiers       |*)
 (*|     : typeModifier+ |*)
@@ -295,10 +944,44 @@ and typeModifiers () =
 (*| typeModifier                   |*)
 (*|     : annotation | SUSPEND NL* |*)
 (*|     ;                          |*)
-and typeModifier () =
-  (* annotation <|> *) (* TODO *)
+and typeModifier () = (* TODO *)
+  (* mkPropE "Annotation" annotation <|> *)
   mkBoolProp "SuspendModifier" suspend
   <* skip_many nl
+
+(*| classModifier    |*)
+(*|     : ENUM       |*)
+(*|     | SEALED     |*)
+(*|     | ANNOTATION |*)
+(*|     | DATA       |*)
+(*|     | INNER      |*)
+(*|     ;            |*)
+and classModifier () = (* TODO *)
+  mkBoolProp "ClassModifierEnum" enum
+  <|> mkBoolProp "ClassModifierSealed" sealed
+  (* <|> mkBoolPropE "ClassModifierAnnotation" annotation *)
+  <|> mkBoolProp "ClassModifierData" data
+  <|> mkBoolProp "ClassModifierInner" inner
+
+(*| memberModifier |*)
+(*|     : OVERRIDE |*)
+(*|     | LATEINIT |*)
+(*|     ;          |*)
+and memberModifier () =
+  mkBoolProp "MemberModifierOverride" override
+  <|> mkBoolProp "MemberModifierLateinit" lateinit
+
+(*| visibilityModifier |*)
+(*|     : PUBLIC       |*)
+(*|     | PRIVATE      |*)
+(*|     | INTERNAL     |*)
+(*|     | PROTECTED    |*)
+(*|     ;              |*)
+and visibilityModifier () =
+  mkBoolProp "VisibilityModifierPublic" public
+  <|> mkBoolProp "VisibilityModifierPrivate" private'
+  <|> mkBoolProp "VisibilityModifierInternal" internal
+  <|> mkBoolProp "VisibilityModifierProtected" protected
 
 (*| varianceModifier |*)
 (*|     : IN         |*)
@@ -321,14 +1004,64 @@ and typeParameterModifiers () =
 (*|     | annotation              |*)
 (*|     ;                         |*)
 and typeParameterModifier () =
-  reificationModifier () <* skip_many nl
-  <|> varianceModifier () <* skip_many nl
+  reificationModifier ()
+  <|> varianceModifier ()
   (* <!> annotation *) (* TODO *)
+
+(*| functionModifier |*)
+(*|     : TAILREC    |*)
+(*|     | OPERATOR   |*)
+(*|     | INFIX      |*)
+(*|     | INLINE     |*)
+(*|     | EXTERNAL   |*)
+(*|     | SUSPEND    |*)
+(*|     ;            |*)
+and functionModifier () =
+  mkBoolProp "FunctionModifierTailrec" tailrec
+  <|> mkBoolProp "FunctionModifierOperator" operator
+  <|> mkBoolProp "FunctionModifierInfix" infix
+  <|> mkBoolProp "FunctionModifierInline" inline
+  <|> mkBoolProp "FunctionModifierExternal" external'
+  <|> mkBoolProp "FunctionModifierSuspend" suspend
+
+(*| propertyModifier |*)
+(*|     : CONST      |*)
+(*|     ;            |*)
+and propertyModifier () = mkBoolProp "PropertyModifierConst" const
+
+(*| inheritanceModifier |*)
+(*|     : ABSTRACT      |*)
+(*|     | FINAL         |*)
+(*|     | OPEN          |*)
+(*|     ;               |*)
+and inheritanceModifier () =
+  mkBoolProp "InheritanceModifierAbstract" abstract
+  <|> mkBoolProp "InheritanceModifierFinal" final
+  <|> mkBoolProp "InheritanceModifierOpen" open'
+
+(*| parameterModifier |*)
+(*|     : VARARG      |*)
+(*|     | NOINLINE    |*)
+(*|     | CROSSINLINE |*)
+(*|     ;             |*)
+and parameterModifier () =
+  mkBoolProp "ParameterModifierVararg" vararg
+  <|> mkBoolProp "ParameterModifierNoinline" noinline
+  <|> mkBoolProp "ParameterModifierCrossinline" crossinline
 
 (*| reificationModifier |*)
 (*|     : REIFIED       |*)
 (*|     ;               |*)
-and reificationModifier () = mkBoolProp "ReificationModifier" reified
+and reificationModifier () =
+  mkBoolProp "ReificationModifier" reified
+
+(*| platformModifier |*)
+(*|     : EXPECT     |*)
+(*|     | ACTUAL     |*)
+(*|     ;            |*)
+and platformModifier () =
+  mkBoolProp "PlatformModifierExpect" expect
+  <|> mkBoolProp "PlatformModifierActual" actual
 
 (*| SECTION: annotations |*)
 
@@ -336,9 +1069,9 @@ and reificationModifier () = mkBoolProp "ReificationModifier" reified
 (*|     : (singleAnnotation | multiAnnotation) NL*                         |*)
 (*|     ;                                                                  |*)
 and annotation () =
-  singleAnnotation ()
+  mkNode "Annotation"
+  <* singleAnnotation ()
   <!> multiAnnotation
-  <* skip_many nl
 
 (*| singleAnnotation                                                       |*)
 (*|     : annotationUseSiteTarget NL* unescapedAnnotation                  |*)
@@ -435,7 +1168,7 @@ and simpleIdentifier () =
 (*|     ;                                              |*)
 and identifier () =
   sep_by1 dot (simpleIdentifier ())
-  >>= concatStringNodes "."
+    >>= concatStringNodes "."
 
 let parse file input =
   isParsingPattern := false;
