@@ -75,7 +75,7 @@ and packageHeader () =
     mkNode "PackageHeader"
     <* package
     <:> mkPropE "Name" identifier
-    <* optSemi
+    <* mkOptE semi
   )
 
 (*| importList          |*)
@@ -93,7 +93,7 @@ and importHeader () =
   <* import
   <:> mkPropE "Name" identifier
   <:> (mkBoolProp "StarImport" (dot <* mult) <|> mkOptPropE "Alias" importAlias)
-  <* optSemi
+  <* mkOptE semi
 
 (*| importAlias               |*)
 (*|     : AS simpleIdentifier |*)
@@ -105,8 +105,8 @@ and importAlias () =
 (*|     : declaration semis? |*)
 (*|     ;                    |*)
 and topLevelObject () =
-  declaration ()
-  <* optSemi
+  (fix declaration)
+  <* mkOptE semis
 
 (*| declaration               |*)
 (*|     : classDeclaration    |*)
@@ -115,7 +115,7 @@ and topLevelObject () =
 (*|     | propertyDeclaration |*)
 (*|     | typeAlias           |*)
 (*|     ;                     |*)
-and declaration () = (* TODO *)
+and declaration _ = (* TODO *)
   classDeclaration ()
 (* <!> objectDeclaration
    <!> functionDeclaration
@@ -137,9 +137,11 @@ and classDeclaration () = (* TODO *)
       <:> (return mods)
       <:> mkPropE "Name" simpleIdentifier
       <:> mkOptPropE "TypeParameters" typeParameters
+      <* commit
       <:> mkOptPropE "PrimaryConstructor" primaryConstructor
       <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
       <:> mkOptPropE "TypeConstraints" typeConstraints
+      <:> mkOptProp "Body" (fix classBody)
     )
 
 (*| primaryConstructor                                   |*)
@@ -148,8 +150,14 @@ and classDeclaration () = (* TODO *)
 and primaryConstructor () =
   mkNode "PrimaryConstructor"
   <:> ((modifiers () >>= fun mods -> mkOptPropEmpty ((return mods) <* constructor))
-    <|> (mkOpt (constructor >>= mkString) *> mkPropHolder))
+       <|> (mkOpt (constructor >>= mkString) *> mkPropHolder))
   <:> mkPropE "ClassParameters" classParameters
+
+(*| classBody                                         |*)
+(*|     : LCURL NL* classMemberDeclarations NL* RCURL |*)
+(*|     ;                                             |*)
+and classBody _ =
+  lcurl *> anyspace *> classMemberDeclarations () <* anyspace <* rcurl
 
 (*| classParameters                                                                |*)
 (*|     : LPAREN NL* (classParameter (NL* COMMA NL* classParameter)* )? NL* RPAREN |*)
@@ -234,13 +242,48 @@ and typeConstraints () =
 (*| typeConstraint                                        |*)
 (*|     : annotation* simpleIdentifier NL* COLON NL* type |*)
 (*|     ;                                                 |*)
-and typeConstraint () = (* TODO *)
+and typeConstraint () = (* TODO - annotation *)
   mkNode "TypeConstraint"
   <:> mkPropE "SubType" simpleIdentifier
   <* anyspace <* colon <* anyspace
   <:> mkProp "SuperType" (fix type')
 
 (*| SECTION: classMembers |*)
+
+(*| classMemberDeclarations                |*)
+(*|     : (classMemberDeclaration semis?)* |*)
+(*|     ;                                  |*)
+and classMemberDeclarations () =
+  mkList1 (fun () -> classMemberDeclaration () <* mkOptE semis)
+  |> mkOpt
+
+(*| classMemberDeclaration     |*)
+(*|     : declaration          |*)
+(*|     | companionObject      |*)
+(*|     | anonymousInitializer |*)
+(*|     | secondaryConstructor |*)
+(*|     ;                      |*)
+and classMemberDeclaration () = (* TODO *)
+  (fix declaration)
+  <!> companionObject
+
+(*| anonymousInitializer |*)
+(*|     : INIT NL* block |*)
+(*|     ;                |*)
+
+(*| companionObject                           |*)
+(*|     : modifiers? COMPANION NL* OBJECT     |*)
+(*|     (NL* simpleIdentifier)?               |*)
+(*|     (NL* COLON NL* delegationSpecifiers)? |*)
+(*|     (NL* classBody)?                      |*)
+(*|     ;                                     |*)
+and companionObject () =
+  mkNode "CompanionObject"
+  <:> mkOptPropEmpty (modifiers ())
+  <* companion <* object'
+  <:> mkOptPropE "Name" simpleIdentifier
+  <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
+  <:> mkOptProp "Body" (fix classBody)
 
 (*| parameter                                 |*)
 (*|     : simpleIdentifier NL* COLON NL* type |*)
@@ -402,6 +445,23 @@ and valueArguments () =
 (*|     ;                                                                              |*)
 and valueArgument () =
   identifier ()  (* TODO *)
+
+(*| semi                       |*)
+(*|     : (SEMICOLON | NL) NL* |*)
+(*|     | EOF;                 |*)
+and semi () =
+  (semicolon >>= fun c -> mkString (String.make 1 c))
+  <|> (nl *> mkString "")
+
+(*| semis                   |*)
+(*|     : (SEMICOLON | NL)+ |*)
+(*|     | EOF               |*)
+(*|     ;                   |*)
+and semis () =
+  mkList1 (fun () ->
+      (semicolon >>= fun c -> mkString (String.make 1 c))
+      <|> (nl *> mkString "")
+    )
 
 (*| SECTION: expressions |*)
 

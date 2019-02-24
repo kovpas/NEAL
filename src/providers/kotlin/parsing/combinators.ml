@@ -294,10 +294,12 @@ let optSemi =
   <|> (whitespace *> peek_char >>= function
     | None -> return ()
     | Some c -> match c with
-      | '}' -> return ()
+      | '}'
+      | '\n'
+      | '\r' -> return ()
       | _ ->
           pos >>= fun p ->
-          fail ("missing linebreak or semicolon")
+            fail ("missing linebreak or semicolon at " ^ string_of_int p ^ ". Got " ^ (String.make 1 c))
   )
 
 let concatStringNodes s nodes =
