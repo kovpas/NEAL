@@ -1,16 +1,17 @@
-// #!/path/to/kotlin choo-choo
+#!/path/to/kotlin choo-choo
 
-// @file:[foo bar]
-// @file:baz
+@file:[foo bar]
+@file:baz
 
-// package com.mu.nism
+package com.mu.nism
 
-// import foo.f.lo
-// import foo.*;
-// import baz;
-// import bar as loo;
+import foo.f.lo
+import foo.foo.*;
+import baz;
+import bar.ba.pa.pa as loo;
 
 // class test<A>
+
 // private interface test<A>
 
 // private sealed tailrec class test;
@@ -28,10 +29,13 @@
 // class test2<f: (JustType, b: (LalaType)?) -> Unit>
 // class test3<f: () -> (ParamType) -> Unit>
 
-class test constructor ( enum val prop1: Type1 )
+class test private constructor ( enum val prop1: Type1 )
 
-// class test private constructor(enum val prop1: Type1 = b<out Nothing, *, in out Any>)
+// class test private constructor(enum val prop1: Type1 = a || c && b ?: d as e)
 
 // class CountingSet(private val delegate: MutableSet<out Nothing, *, in out Any, CoolType<NestedTypeArgument>.Subtype>)
-// class CountingSet(private val delegate: MutableSet<Long>) : MutableSet<Long> by delegate where A: B<T>, C: (D?) -> Unit
-// class test: A by delegate where A: B<T>, C: dynamic
+// //// class CountingSet(private val delegate: MutableSet<Long>) : MutableSet<Long> by delegate where A: B<T>, C: (D?) -> Unit
+// //// class test: A by delegate where A: B<T>, C: dynamic
+
+// //// class c: a by a
+// class d

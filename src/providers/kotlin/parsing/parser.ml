@@ -37,11 +37,11 @@ and kotlinFile () =
   <:> mkPropE "PackageHeader" packageHeader
   <:> mkPropE "ImportList" importList
   <:> mkOptProp "TopLevelObject" (mkList1 topLevelObject)
-    >>= fun stm ->
-      pos >>= fun pos ->
-        (
-          anyspace *> end_of_input <?> (" at offset " ^ string_of_int pos ^ ", expected")
-        ) *> return stm
+  >>= fun stm ->
+  pos >>= fun pos ->
+  (
+    anyspace *> end_of_input <?> (" at offset " ^ string_of_int pos ^ ", expected")
+  ) *> return stm
 
 (*| script                                                                                |*)
 (*|     : shebangLine? NL* fileAnnotation* packageHeader importList (statement semi)* EOF |*)
@@ -115,12 +115,12 @@ and topLevelObject () =
 (*|     | propertyDeclaration |*)
 (*|     | typeAlias           |*)
 (*|     ;                     |*)
-and declaration () =
+and declaration () = (* TODO *)
   classDeclaration ()
-  (* <!> objectDeclaration
-  <!> functionDeclaration
-  <!> propertyDeclaration
-  <!> typeAlias *)
+(* <!> objectDeclaration
+   <!> functionDeclaration
+   <!> propertyDeclaration
+   <!> typeAlias *)
 
 (*| SECTION: classes |*)
 
@@ -132,28 +132,30 @@ and declaration () =
 (*|     (NL* classBody | NL* enumClassBody)?                  |*)
 (*|     ;                                                     |*)
 and classDeclaration () = (* TODO *)
-  mkOptPropEmptyE modifiers >>= fun mods ->
-    ((class' *> mkNode "ClassDeclaration") <|> (interface *> mkNode "InterfaceDeclaration"))
-    <:> (return mods)
-    <:> mkPropE "Name" simpleIdentifier
-    <:> mkOptPropE "TypeParameters" typeParameters
-    <:> mkOptPropE "PrimaryConstructor" primaryConstructor
-    <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
-    <:> mkOptPropE "TypeConstraints" typeConstraints
+  mkOptPropEmptyE modifiers >>= (fun mods ->
+      ((class' *> mkNode "ClassDeclaration") <|> (interface *> mkNode "InterfaceDeclaration"))
+      <:> (return mods)
+      <:> mkPropE "Name" simpleIdentifier
+      <:> mkOptPropE "TypeParameters" typeParameters
+      <:> mkOptPropE "PrimaryConstructor" primaryConstructor
+      <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
+      <:> mkOptPropE "TypeConstraints" typeConstraints
+    )
 
 (*| primaryConstructor                                   |*)
 (*|     : (modifiers? CONSTRUCTOR NL* )? classParameters |*)
 (*|     ;                                                |*)
 and primaryConstructor () =
   mkNode "PrimaryConstructor"
-  <:> mkOptPropEmpty (modifiers () <* constructor)
+  <:> ((modifiers () >>= fun mods -> mkOptPropEmpty ((return mods) <* constructor))
+    <|> (mkOpt (constructor >>= mkString) *> mkPropHolder))
   <:> mkPropE "ClassParameters" classParameters
 
 (*| classParameters                                                                |*)
 (*|     : LPAREN NL* (classParameter (NL* COMMA NL* classParameter)* )? NL* RPAREN |*)
 (*|     ;                                                                          |*)
 and classParameters () =
-  lparen *> mkOpt (commaSep classParameter) <* rparen
+  lparen *> anyspace *> mkOpt (commaSep classParameter) <* anyspace <* rparen
 
 (*| classParameter                                                                                     |*)
 (*|     : modifiers? (VAL | VAR)? NL* simpleIdentifier COLON NL* type (NL* ASSIGNMENT NL* expression)? |*)
@@ -209,10 +211,9 @@ and explicitDelegation () =
 (*|   : LANGLE NL* typeParameter (NL* COMMA NL* typeParameter)* NL* RANGLE |*)
 (*|   ;                                                                    |*)
 and typeParameters () =
-  langle
+  (langle <* anyspace)
   *> (commaSep typeParameter)
-  <* skip_many nl
-  <* rangle
+  <* (rangle <* anyspace)
 
 (*| typeParameter                                                          |*)
 (*|   : typeParameterModifiers? NL* simpleIdentifier (NL* COLON NL* type)? |*)
@@ -220,9 +221,9 @@ and typeParameters () =
 and typeParameter () =
   mkNode "TypeParameter"
   <:> mkOptPropEmptyE typeParameterModifiers
-  <* skip_many nl
+  <* anyspace
   <:> mkPropE "Identifier" simpleIdentifier
-  <:> mkOptProp "Type" (colon *> (fix type'))
+  <:> mkOptProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
 
 (*| typeConstraints                                                |*)
 (*|     : WHERE NL* typeConstraint (NL* COMMA NL* typeConstraint)* |*)
@@ -236,7 +237,7 @@ and typeConstraints () =
 and typeConstraint () = (* TODO *)
   mkNode "TypeConstraint"
   <:> mkPropE "SubType" simpleIdentifier
-  <* colon
+  <* anyspace <* colon <* anyspace
   <:> mkProp "SuperType" (fix type')
 
 (*| SECTION: classMembers |*)
@@ -247,7 +248,7 @@ and typeConstraint () = (* TODO *)
 and parameter () =
   mkNode "Parameter"
   <:> mkPropE "Identifier" simpleIdentifier
-  <:> mkProp "Type" (colon *> (fix type'))
+  <:> mkProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
 
 (*| SECTION: enumClasses |*)
 
@@ -262,12 +263,12 @@ and parameter () =
 (*|     ;                   |*)
 and type' _ =
   mkOptPropEmptyE typeModifiers >>= (fun mods ->
-    functionType ()
-    <!> nullableType
-    <!> parenthesizedType
-    <!> typeReference
-    <:> (return mods)
-  )
+      functionType ()
+      <!> nullableType
+      <!> parenthesizedType
+      <!> typeReference
+      <:> (return mods)
+    )
 
 (*| typeReference  |*)
 (*|     : userType |*)
@@ -298,9 +299,9 @@ and quest () =
 (*| userType                                           |*)
 (*|     : simpleUserType (NL* DOT NL* simpleUserType)* |*)
 (*|     ;                                              |*)
-and userType () =
+and userType () = (* TODO: join types up to <Generic> *)
   mkNode "UserType"
-  <:> mkOptProp "Types" (sep_by1 dot (simpleUserType ()) >>= toList)
+  <:> mkProp "Types" (sep_by1 (anyspace *> dot <* anyspace) (simpleUserType ()) >>= toList)
 
 (*| simpleUserType                              |*)
 (*|     : simpleIdentifier (NL* typeArguments)? |*)
@@ -316,12 +317,12 @@ and typeProjection () =
   (mkNode "StarProjection" <* mult)
   <|>
   (mkNode "TypeProjection"
-    <:> (mkOptPropEmptyE typeProjectionModifiers >>= fun mods ->
-      mkProp "Type" (
-        fix type'
-        <:> (return mods)
-      )
-    )
+   <:> (mkOptPropEmptyE typeProjectionModifiers >>= fun mods ->
+        mkProp "Type" (
+          fix type'
+          <:> (return mods)
+        )
+       )
   )
 
 (*| typeProjectionModifiers       |*)
@@ -329,7 +330,7 @@ and typeProjection () =
 (*|     ;                         |*)
 and typeProjectionModifiers () =
   many1 typeProjectionModifier >>= fun mods ->
-    List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
 
 (*| typeProjectionModifier     |*)
 (*|     : varianceModifier NL* |*)
@@ -337,7 +338,7 @@ and typeProjectionModifiers () =
 (*|     ;                      |*)
 and typeProjectionModifier () = (* TODO *)
   varianceModifier ()
-  (* <!> annotation *)
+(* <!> annotation *)
 
 (*| receiverType            |*)
 (*|     : typeModifiers?    |*)
@@ -347,11 +348,11 @@ and typeProjectionModifier () = (* TODO *)
 (*|     ;                   |*)
 and receiverType () =
   mkOptPropEmptyE typeModifiers >>= (fun mods ->
-    nullableType ()
-    <!> parenthesizedType
-    <!> typeReference
-    <:> (return mods)
-  )
+      nullableType ()
+      <!> parenthesizedType
+      <!> typeReference
+      <:> (return mods)
+    )
 
 (*| parenthesizedType                |*)
 (*|     : LPAREN NL* type NL* RPAREN |*)
@@ -376,10 +377,7 @@ and functionType () =
 (*|     ;                                                                               |*)
 and functionTypeParameters () =
   lparen
-  *> mkOpt (commaSep (fun () ->
-      parameter () <|> (fix type')
-    )
-  )
+  *> mkOpt (commaSep (fun () -> parameter () <|> (fix type')))
   <* rparen
 
 (*| SECTION: statements |*)
@@ -413,14 +411,36 @@ and valueArgument () =
 and expression _ =
   disjunction ()
 
+and auxExpression'' name prop expr1 expr2 =
+  expr1 () >>= (fun e ->
+      let aux = fun pHolder ->
+        mkNode name
+        <:> mkProp "Lhs" (return e)
+        <:> return pHolder
+      in
+      (
+        (mkPropHolder
+         <:> prop
+         <:> mkPropE "Rhs" expr2
+        ) >>= aux
+      ) <|> return e
+    )
+
+and auxExpression' name prop expr =
+  (* auxExpression'' name prop expr expr *)
+  let rec aux = fun e ->
+    (prop >>= fun opProp ->
+     mkNode name
+     <:> mkProp "Lhs" (return e)
+     <:> (return opProp)
+     <:> mkProp "Rhs" (expr () >>= aux))
+    <|> (return e)
+  in
+  expr () >>= aux
+
+
 and auxExpression name op expr =
-  (
-    mkNode name
-    <:> mkPropE "Lhs" expr
-    <:> mkProp "Operator" (op >>= mkString)
-    <:> mkPropE "Rhs" expr
-  )
-  <!> expr
+  auxExpression' name (mkProp "Operator" (op >>= mkString)) expr
 
 (*| disjunction                                   |*)
 (*|     : conjunction (NL* DISJ NL* conjunction)* |*)
@@ -450,41 +470,38 @@ and comparison () =
 (*|   : elvisExpression (inOperator NL* elvisExpression | isOperator NL* type)* |*)
 (*|   ;                                                                         |*)
 and infixOperation () =
+  elvisExpression () >>= fun eExpr ->
   let aux = fun op expr ->
-    mkProp "Operator" ((op ()) >>= mkString)
-    <:> mkPropE "Rhs" elvisExpression
+    mkProp "Operator" ((op () <* anyspace) >>= mkString)
+    <:> mkProp "Rhs" expr
   in
   mkNode "InfixOperation"
-  <:> mkPropE "Lhs" elvisExpression
-  <:> (
-    aux inOperator elvisExpression
-   <|> aux isOperator (fun () -> fix type')
-  )
-  <!> elvisExpression
+  <:> mkProp "Lhs" (return eExpr)
+  <:> (aux inOperator (elvisExpression ())
+       <|> aux isOperator (fix type'))
+  <|> (return eExpr)
 
 (*| elvisExpression                                          |*)
 (*|   : infixFunctionCall (NL* elvis NL* infixFunctionCall)* |*)
 (*|   ;                                                      |*)
 and elvisExpression () =
-  auxExpression "ElvisExpression" (elvis ()) infixFunctionCall
+  auxExpression' "ElvisExpression" (mkProp "Operator" (elvis () >>= fun _ -> mkString "?:")) infixFunctionCall
 
 (*| elvis                 |*)
 (*|   : QUEST_NO_WS COLON |*)
 (*|   ;                   |*)
 and elvis () =
-  questNoWs <* colon
+  anyspace *> questNoWs <* colon
 
 (*| infixFunctionCall                                           |*)
 (*|   : rangeExpression (simpleIdentifier NL* rangeExpression)* |*)
 (*|   ;                                                         |*)
 and infixFunctionCall () =
-  (
-    mkNode "InfixFunctionCall"
-    <:> mkPropE "Lhs" rangeExpression
-    <:> mkPropE "Identifier" simpleIdentifier
-    <:> mkPropE "Rhs" rangeExpression
-  )
-  <!> rangeExpression
+  auxExpression'
+    "InfixFunctionCall"
+    (mkPropE "Identifier" simpleIdentifier)
+    rangeExpression
+
 
 (*| rangeExpression                                        |*)
 (*|   : additiveExpression (RANGE NL* additiveExpression)* |*)
@@ -508,21 +525,25 @@ and multiplicativeExpression () =
 (*|   : prefixUnaryExpression (NL* asOperator NL* type)? |*)
 (*|   ;                                                  |*)
 and asExpression () =
-  (
-    mkNode "AsExpression"
-    <:> mkPropE "Lhs" prefixUnaryExpression
-    <:> mkProp "Operator" (asOperator () >>= mkString)
-    <:> mkProp "Rhs" (fix type')
+  prefixUnaryExpression () >>= fun puEx ->
+  (mkNode "AsExpression"
+   <:> mkProp "Prefix" (return puEx)
+   <:> mkProp "Operator" (asOperator () >>= mkString)
+   <:> mkProp "Type" (fix type')
   )
-  <!> prefixUnaryExpression
+  <|> (return puEx)
 
 (*| prefixUnaryExpression                   |*)
 (*|   : unaryPrefix* postfixUnaryExpression |*)
 (*|   ;                                     |*)
 and prefixUnaryExpression () =
-  mkNode "PrefixUnaryExpression"
-  <:> mkOptProp "Prefixes" (mkList1 unaryPrefix)
-  <:> mkPropE "Expression" postfixUnaryExpression
+  let aux = fun prfx ->
+    mkNode "PrefixUnaryExpression"
+    <:> (return prfx)
+    <:> mkPropE "Expression" postfixUnaryExpression
+  in
+  (mkProp "Prefixes" (mkList1 unaryPrefix) >>= aux)
+  <!> postfixUnaryExpression
 
 (*| unaryPrefix                 |*)
 (*|   : annotation              |*)
@@ -539,9 +560,14 @@ and unaryPrefix () =
 (*|   | primaryExpression postfixUnarySuffix+ |*)
 (*|   ;                                       |*)
 and postfixUnaryExpression () =
-  mkNode "PostfixUnaryExpression"
-  <:> mkPropE "Expression" primaryExpression
-  <:> mkOptProp "Suffixes" (mkList1 postfixUnarySuffix)
+  primaryExpression () >>= fun pExpr ->
+  let aux = fun sfxs ->
+    mkNode "PostfixUnaryExpression"
+    <:> mkProp "Expression" (return pExpr)
+    <:> mkProp "Suffixes" (return sfxs)
+  in
+  (mkList1 postfixUnarySuffix >>= aux)
+  <|> (return pExpr)
 
 (*| postfixUnarySuffix       |*)
 (*|   : postfixUnaryOperator |*)
@@ -553,11 +579,11 @@ and postfixUnaryExpression () =
 and postfixUnarySuffix () =
   mkNode "PostfixUnarySuffix"
   <:> (mkPropE "UnaryOperator" postfixUnaryOperator
-    <|> mkPropE "TypeArguments" typeArguments
-    <|> mkPropE "CallSuffix" callSuffix
-    <|> mkPropE "IndexingSuffix" indexingSuffix
-    <|> mkPropE "NavigationSuffix" navigationSuffix
-  )
+       <|> mkPropE "TypeArguments" typeArguments
+       <|> mkPropE "CallSuffix" callSuffix
+       <|> mkPropE "IndexingSuffix" indexingSuffix
+       <|> mkPropE "NavigationSuffix" navigationSuffix
+      )
 
 (*| directlyAssignableExpression                |*)
 (*|   : postfixUnaryExpression assignableSuffix |*)
@@ -578,10 +604,9 @@ and postfixUnarySuffix () =
 (*|   : LSQUARE NL* expression (NL* COMMA NL* expression)* NL* RSQUARE |*)
 (*|   ;                                                                |*)
 and indexingSuffix () =
-  lsquare
+  (lsquare <* anyspace)
   *> commaSep (fun () -> fix expression)
-  <* skip_many nl
-  <* rsquare
+  <* (anyspace *> rsquare)
 
 (*| navigationSuffix                                                                      |*)
 (*|   : NL* memberAccessOperator NL* (simpleIdentifier | parenthesizedExpression | CLASS) |*)
@@ -590,8 +615,8 @@ and navigationSuffix () =
   memberAccessOperator ()
   <* (
     (class' >>= mkString)
-    <!> simpleIdentifier
     <!> parenthesizedExpression
+    <!> simpleIdentifier
   )
 
 (*| callSuffix                                         |*)
@@ -610,10 +635,9 @@ and callSuffix () = (* TODO *)
 (*|   : LANGLE NL* typeProjection (NL* COMMA NL* typeProjection)* NL* RANGLE |*)
 (*|   ;                                                                      |*)
 and typeArguments () =
-  langle
+  (langle <* anyspace)
   *> (commaSep typeProjection)
-  <* skip_many nl
-  <* rangle
+  <* (anyspace *> rangle)
 
 (*| valueArguments                                                         |*)
 (*|   : LPAREN NL* RPAREN                                                  |*)
@@ -640,18 +664,17 @@ and typeArguments () =
 (*|   | tryExpression            |*)
 (*|   | jumpExpression           |*)
 (*|   ;                          |*)
-and primaryExpression () =
-  mkNode "Expression"
-  <* parenthesizedExpression ()
+and primaryExpression () = (* TODO *)
+  parenthesizedExpression ()
   <!> simpleIdentifier
 
 (*| parenthesizedExpression              |*)
 (*|   : LPAREN NL* expression NL* RPAREN |*)
 (*|   ;                                  |*)
 and parenthesizedExpression () =
-  lparen
+  (lparen <* anyspace)
   *> (fix expression)
-  <* rparen
+  <* (anyspace *> rparen)
 
 (*| collectionLiteral                                                  |*)
 (*|   : LSQUARE NL* expression (NL* COMMA NL* expression)* NL* RSQUARE |*)
@@ -909,10 +932,10 @@ and safeNav () =
 (*|     ;                          |*)
 and modifiers () =
   many1 (fun () ->
-    (* annotation () <!>  *)
-    modifier ()
-  ) >>= fun mods ->
-    List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+      (* annotation () <!>  *)
+      modifier ()
+    ) >>= fun mods ->
+  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
 
 (*| modifier                    |*)
 (*|     : (classModifier        |*)
@@ -939,7 +962,7 @@ and modifier () =
 (*|     ;               |*)
 and typeModifiers () =
   many1 typeModifier >>= fun mods ->
-    List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
 
 (*| typeModifier                   |*)
 (*|     : annotation | SUSPEND NL* |*)
@@ -996,7 +1019,7 @@ and varianceModifier () =
 (*|     ;                        |*)
 and typeParameterModifiers () =
   many1 typeParameterModifier >>= fun mods ->
-    List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
 
 (*| typeParameterModifier         |*)
 (*|     : reificationModifier NL* |*)
@@ -1006,7 +1029,7 @@ and typeParameterModifiers () =
 and typeParameterModifier () =
   reificationModifier ()
   <|> varianceModifier ()
-  (* <!> annotation *) (* TODO *)
+(* <!> annotation *) (* TODO *)
 
 (*| functionModifier |*)
 (*|     : TAILREC    |*)
@@ -1111,7 +1134,8 @@ and unescapedAnnotation () =
 (*|     ;                         |*)
 and constructorInvocation () =
   mkNode "ConstructorInvocation"
-  <:> mkPropE "Identifier" userType (* TODO *)
+  <:> mkPropE "Identifier" userType
+  <:> mkPropE "Arguments" valueArguments
 
 (*| SECTION: identifiers |*)
 
@@ -1159,24 +1183,24 @@ and constructorInvocation () =
 and simpleIdentifier () =
   anyspace *>
   pos >>= fun pos ->
-    (
-      identifier' pos (* TODO *)
-    )
+  (
+    identifier' pos (* TODO *)
+  )
 
 (*| identifier                                         |*)
 (*|     : simpleIdentifier (NL* DOT simpleIdentifier)* |*)
 (*|     ;                                              |*)
 and identifier () =
   sep_by1 dot (simpleIdentifier ())
-    >>= concatStringNodes "."
+  >>= concatStringNodes "."
 
 let parse file input =
   isParsingPattern := false;
   patternDepth := 0;
   match parse_only (kotlinFile ()) (`String input) with
   | Ok ast ->
-      let program = extractNode ast in
-      let comments' = get_comments () in
-      List (comments' @ [program])
+    let program = extractNode ast in
+    let comments' = get_comments () in
+    List (comments' @ [program])
   | Error e ->
-      failwith (Printf.sprintf "%s: SyntaxError%s" file e)
+    failwith (Printf.sprintf "%s: SyntaxError%s" file e)

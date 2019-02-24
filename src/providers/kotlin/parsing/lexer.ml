@@ -142,7 +142,6 @@ and eqEqEq = wfstring "==="
 and annotation_use_site_target_file () =
   mkNode "AnnotationFile"
   <* string "@file"
-  <* skip_many nl
   <* colon
 
 (*| PACKAGE: 'package'; |*)
