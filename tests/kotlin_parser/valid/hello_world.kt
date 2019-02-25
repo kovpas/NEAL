@@ -54,6 +54,7 @@
 
 class InitOrderDemo(name: String) {
     private constructor(firstName: String = a || c && b ?: d as e, secondName: String<String>): this(arg1, arg2) {
-
+      a = b<T>
+      b -= a || b
     }
 }

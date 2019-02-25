@@ -177,7 +177,7 @@ and classParameter () =
   )
   <:> mkProp "Identifier" (simpleIdentifier () <* colon)
   <:> mkProp "Type" (fix type')
-  <:> mkOptPropEmpty (assignment *> mkProp "DefaultValue" (fix expression))
+  <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
 
 (*| delegationSpecifiers                                                           |*)
 (*|   : annotatedDelegationSpecifier (NL* COMMA NL* annotatedDelegationSpecifier)* |*)
@@ -306,7 +306,7 @@ and functionValueParameter () =
   mkNode "Parameter"
   <:> mkOptPropEmptyE modifiers
   <:> mkPropHolder <:> parameter ()
-  <:> mkOptPropEmpty (assignment *> mkProp "DefaultValue" (fix expression))
+  <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
 
 (*| parameter                                 |*)
 (*|     : simpleIdentifier NL* COLON NL* type |*)
@@ -482,7 +482,9 @@ and statements () =
 (*|     ;                       |*)
 and statement () =  (* TODO *)
   (fix declaration)
-  <!> (fix expression)
+  <!> assignment
+  (* <!> loopStatement *)
+  <|> (fix expression)
 
 (*| label                  |*)
 (*|     : IdentifierAt NL* |*)
@@ -517,6 +519,20 @@ and valueArguments () =
 (*|     ;                                                                              |*)
 and valueArgument () =
   identifier ()  (* TODO *)
+
+(*| assignment                                                      |*)
+(*|     : directlyAssignableExpression ASSIGNMENT NL* expression    |*)
+(*|     | assignableExpression assignmentAndOperator NL* expression |*)
+(*|     ;                                                           |*)
+and assignment () =
+  mkNode "AssignmentExpression"
+  <:> (
+    (mkPropE "Assignee" directlyAssignableExpression <* assignment')
+    <|>
+    (mkPropE "Assignee" assignableExpression
+     <:> mkProp "Operator" (assignmentAndOperator () >>= mkString))
+  )
+  <:> mkProp "Value" (fix expression)
 
 (*| semi                       |*)
 (*|     : (SEMICOLON | NL) NL* |*)
@@ -721,16 +737,25 @@ and postfixUnarySuffix () =
 (*|   : postfixUnaryExpression assignableSuffix |*)
 (*|   | simpleIdentifier                        |*)
 (*|   ;                                         |*)
+and directlyAssignableExpression () =
+  (postfixUnaryExpression () <:> mkPropE "Suffix" assignableSuffix)
+  <|> simpleIdentifier ()
 
 (*| assignableExpression      |*)
 (*|   : prefixUnaryExpression |*)
 (*|   ;                       |*)
+and assignableExpression () =
+  prefixUnaryExpression ()
 
 (*| assignableSuffix     |*)
 (*|   : typeArguments    |*)
 (*|   | indexingSuffix   |*)
 (*|   | navigationSuffix |*)
 (*|   ;                  |*)
+and assignableSuffix () =
+  typeArguments ()
+  <!> indexingSuffix
+  <!> navigationSuffix
 
 (*| indexingSuffix                                                     |*)
 (*|   : LSQUARE NL* expression (NL* COMMA NL* expression)* NL* RSQUARE |*)

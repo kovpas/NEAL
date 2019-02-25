@@ -293,7 +293,7 @@ and colon = char ':'
 (*| SEMICOLON: ';';                                           |*)
 and semicolon = char ';'
 (*| ASSIGNMENT: '=';                                          |*)
-and assignment = wfstring "="
+and assignment' = wfstring "="
 (*| ADD_ASSIGNMENT: '+=';                                     |*)
 and addAssignment = wfstring "+="
 (*| SUB_ASSIGNMENT: '-=';                                     |*)
