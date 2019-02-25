@@ -275,7 +275,7 @@ and classMemberDeclaration () =
 and anonymousInitializer () =
   mkNode "AnonymousInitializer"
   <* init <* anyspace
-  <:> mkPropE "Block" block
+  <:> mkProp "Block" (fix block)
 
 (*| companionObject                           |*)
 (*|     : modifiers? COMPANION NL* OBJECT     |*)
@@ -308,6 +308,23 @@ and functionValueParameter () =
   <:> mkPropHolder <:> parameter ()
   <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
 
+(*| variableDeclaration                                          |*)
+(*|     : annotation* NL* simpleIdentifier (NL* COLON NL* type)? |*)
+(*|     ;                                                        |*)
+and variableDeclaration () = (* TODO *)
+  mkNode "VariableDeclaration"
+  (* <* annotation () *)
+  <:> mkPropE "Identifier" simpleIdentifier
+  <:> mkOptProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
+
+(*| multiVariableDeclaration                                                             |*)
+(*|     : LPAREN NL* variableDeclaration (NL* COMMA NL* variableDeclaration)* NL* RPAREN |*)
+(*|     ;                                                                                |*)
+and multiVariableDeclaration () =
+  lparen *> anyspace
+  *> commaSep variableDeclaration
+  <* anyspace <* rparen
+
 (*| parameter                                 |*)
 (*|     : simpleIdentifier NL* COLON NL* type |*)
 (*|     ;                                     |*)
@@ -324,7 +341,7 @@ and secondaryConstructor () =
   <* constructor
   <:> mkPropE "Parameters" functionValueParameters
   <:> mkOptProp "DelegationCall" (anyspace *> colon *> anyspace *> constructorDelegationCall ())
-  <:> mkOptPropE "Block" block
+  <:> mkOptProp "Block" (fix block)
 
 (*| constructorDelegationCall      |*)
 (*|     : THIS NL* valueArguments  |*)
@@ -471,7 +488,7 @@ and functionTypeParameters () =
 (*|     : (statement (semis statement)* semis?)? |*)
 (*|     ;                                        |*)
 and statements () =
-  sep_by (semis ()) (statement ()) >>= toList <* mkOpt (semis ())
+  sep_by (semis ()) (fix statement) >>= toList <* mkOpt (semis ())
 
 (*| statement                   |*)
 (*|     : (label | annotation)* |*)
@@ -480,10 +497,10 @@ and statements () =
 (*|     | loopStatement         |*)
 (*|     | expression)           |*)
 (*|     ;                       |*)
-and statement () =  (* TODO *)
+and statement _ =  (* TODO *)
   (fix declaration)
   <!> assignment
-  (* <!> loopStatement *)
+  <!> loopStatement
   <|> (fix expression)
 
 (*| label                  |*)
@@ -496,29 +513,62 @@ and label () =
 (*|     : block          |*)
 (*|     | statement      |*)
 (*|     ;                |*)
+and controlStructureBody () =
+  (fix block)
+  <|> (fix statement)
 
 (*| block                                |*)
 (*|     : LCURL NL* statements NL* RCURL |*)
 (*|     ;                                |*)
-and block () =
+and block _ =
   lcurl *> anyspace
   *> statements ()
   <* anyspace <* rcurl
 
-(*| valueArguments                                                           |*)
-(*|     : LPAREN NL* RPAREN                                                  |*)
-(*|     | LPAREN NL* valueArgument (NL* COMMA NL* valueArgument)* NL* RPAREN |*)
-(*|     ;                                                                    |*)
-and valueArguments () =
-  lparen
-  *> mkOpt (commaSep valueArgument)
-  <* rparen
+(*| loopStatement        |*)
+(*|   : forStatement     |*)
+(*|   | whileStatement   |*)
+(*|   | doWhileStatement |*)
+(*|   ;                  |*)
+and loopStatement () =
+  forStatement ()
+  <!> whileStatement
+  <!> doWhileStatement
 
-(*| valueArgument                                                                      |*)
-(*|     : annotation? NL* (simpleIdentifier NL* ASSIGNMENT NL* )? MULT? NL* expression |*)
-(*|     ;                                                                              |*)
-and valueArgument () =
-  identifier ()  (* TODO *)
+(*| forStatement                                                                                                                     |*)
+(*|     : FOR NL* LPAREN annotation* (variableDeclaration | multiVariableDeclaration) IN expression RPAREN NL* controlStructureBody? |*)
+(*|     ;                                                                                                                            |*)
+and forStatement () = (* TODO *)
+  mkNode "ForStatement"
+  <* for' <* lparen
+  (* *> many (annotation ()) *)
+  <:> mkProp "Variables" (
+    variableDeclaration ()
+    <!> multiVariableDeclaration
+  ) <* in' <:> mkProp "Expression" (fix expression) <* rparen
+  <:> mkOptPropE "Body" controlStructureBody
+
+(*| whileStatement                                                    |*)
+(*|     : WHILE NL* LPAREN expression RPAREN NL* controlStructureBody |*)
+(*|     | WHILE NL* LPAREN expression RPAREN NL* SEMICOLON            |*)
+(*|     ;                                                             |*)
+and whileStatement () =
+  mkNode "WhileStatement"
+  <* while' <* lparen
+  <:> mkProp "Conditions" (fix expression) <* rparen
+  <:> (
+    mkPropE "Body" controlStructureBody
+    <|> (semicolon *> mkPropHolder)
+  )
+
+(*| doWhileStatement                                                          |*)
+(*|     : DO NL* controlStructureBody? NL* WHILE NL* LPAREN expression RPAREN |*)
+(*|     ;                                                                     |*)
+and doWhileStatement () =
+  mkNode "DoWhileStatement"
+  <* do'
+  <* mkOptE controlStructureBody
+  <* while' <* lparen <* fix expression <* rparen
 
 (*| assignment                                                      |*)
 (*|     : directlyAssignableExpression ASSIGNMENT NL* expression    |*)
@@ -796,14 +846,21 @@ and typeArguments () =
   *> (commaSep typeProjection)
   <* (anyspace *> rangle)
 
-(*| valueArguments                                                         |*)
-(*|   : LPAREN NL* RPAREN                                                  |*)
-(*|   | LPAREN NL* valueArgument (NL* COMMA NL* valueArgument)* NL* RPAREN |*)
-(*|   ;                                                                    |*)
+(*| valueArguments                                                           |*)
+(*|     : LPAREN NL* RPAREN                                                  |*)
+(*|     | LPAREN NL* valueArgument (NL* COMMA NL* valueArgument)* NL* RPAREN |*)
+(*|     ;                                                                    |*)
+and valueArguments () =
+  lparen
+  *> mkOpt (commaSep valueArgument)
+  <* rparen
 
-(*| valueArgument                                                                    |*)
-(*|   : annotation? NL* (simpleIdentifier NL* ASSIGNMENT NL* )? MULT? NL* expression |*)
-(*|   ;                                                                              |*)
+(*| valueArgument                                                                      |*)
+(*|     : annotation? NL* (simpleIdentifier NL* ASSIGNMENT NL* )? MULT? NL* expression |*)
+(*|     ;                                                                              |*)
+and valueArgument () =
+  (* mkOptE annotation <* *)
+  mkOpt (simpleIdentifier () <* assignment') <* mkOpt (mult *> mkString "*") <* fix expression
 
 (*| primaryExpression            |*)
 (*|   : parenthesizedExpression  |*)
@@ -824,6 +881,7 @@ and typeArguments () =
 and primaryExpression () = (* TODO *)
   parenthesizedExpression ()
   <!> simpleIdentifier
+  <!> literalConstant
 
 (*| parenthesizedExpression              |*)
 (*|   : LPAREN NL* expression NL* RPAREN |*)
@@ -849,6 +907,26 @@ and parenthesizedExpression () =
 (*|   | LongLiteral      |*)
 (*|   | UnsignedLiteral  |*)
 (*|   ;                  |*)
+and literalConstant () =
+  let aux = fun p t ->
+    p () >>= fun v ->
+      mkProp "Type" (mkString t)
+      <:> mkProp "Value" (mkString v)
+  in
+  booleanLiteral ()
+  <!> nullLiteral
+  <!> characterLiteral
+  <|> (
+    mkNode "NumericLiteral"
+    <:> (
+      aux realLiteral "Real"
+      <|> aux integerLiteral "Integer"
+      <|> aux hexLiteral "Hex"
+      <|> aux binLiteral "Bin"
+      <|> aux longLiteral "Long"
+      <|> aux unsignedLiteral "Unsigned"
+    )
+  )
 
 (*| stringLiteral              |*)
 (*|   : lineStringLiteral      |*)

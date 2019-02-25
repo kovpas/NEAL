@@ -237,12 +237,12 @@ and shebangLine' _ =
   <* string "#!"
   <:> mkProp "Value" (
     pos >>= fun pos ->
-      many1(fun () -> satisfy(function
+    many1(fun () -> satisfy(function
         | '\r' | '\n' -> false
         | _ -> true
       )) >>| fun chars ->
-        NodeHolder(pos, string_of_chars chars)
-    )
+    NodeHolder(pos, string_of_chars chars)
+  )
 
 (*| NL: '\n' | '\r' '\n'?; |*)
 and nl = linebreak
@@ -346,6 +346,193 @@ and annotation_use_site_target_file () =
   <* string "@file"
   <* colon
 
+(*| fragment DecDigit: '0'..'9'; |*)
+and decDigit () =
+  satisfy(function
+      | '0'..'9' -> true
+      | _ -> false
+    )
+
+(*| fragment DecDigitNoZero: '1'..'9'; |*)
+and decDigitNoZero () =
+  satisfy(function
+      | '1'..'9' -> true
+      | _ -> false
+    )
+
+(*| fragment DecDigitOrSeparator: DecDigit | '_'; |*)
+and decDigitOrSeparator () =
+  satisfy(function
+      | '0'..'9'
+      | '_' -> true
+      | _ -> false
+    )
+
+(*| fragment DecDigits                           |*)
+(*|     : DecDigit DecDigitOrSeparator* DecDigit |*)
+(*|     | DecDigit                               |*)
+(*|     ;                                        |*)
+and decDigits (): string Angstrom.t = (* TODO - simplify *)
+  decDigit () >>= fun d: string Angstrom.t ->
+  (many (decDigitOrSeparator ()) >>= fun midL: string Angstrom.t ->
+   decDigit () >>= fun l: string Angstrom.t ->
+   return (String.concat "" (List.map (String.make 1) (d::midL @ [l]))))
+  <|>
+  return (String.make 1 d)
+
+(*| fragment DoubleExponent: [eE] [+-]? DecDigits; |*)
+and doubleExponent () =
+  (char 'e' <|> char 'E')
+  *> option "" (wfstring "+" <|> wfstring "-") >>= fun sign ->
+  decDigits () >>= fun dds ->
+  return (sign ^ "e" ^ dds)
+
+(*| RealLiteral         |*)
+(*|     : FloatLiteral  |*)
+(*|     | DoubleLiteral |*)
+(*|     ;               |*)
+and realLiteral () =
+  floatLiteral ()
+  <!> doubleLiteral
+
+(*| FloatLiteral             |*)
+(*|     : DoubleLiteral [fF] |*)
+(*|     | DecDigits [fF]     |*)
+(*|     ;                    |*)
+and floatLiteral (): string Angstrom.t =
+  (doubleLiteral () <!> decDigits) >>= fun f ->
+  (char 'f' <|> char 'F') *>
+  return (f ^ Char.escaped 'f')
+
+(*| DoubleLiteral                                  |*)
+(*|     : DecDigits? '.' DecDigits DoubleExponent? |*)
+(*|     | DecDigits DoubleExponent                 |*)
+(*|     ;                                          |*)
+and doubleLiteral (): string Angstrom.t =
+  (
+    option "" (decDigits ()) >>= fun dd1 ->
+    string "." *> decDigits () >>= fun dd2 ->
+    option "" (doubleExponent ()) >>= fun de ->
+    return (dd1 ^ "." ^ dd2 ^ de)
+  ) <|> (
+    decDigits () >>= fun dd ->
+    doubleExponent () >>= fun de ->
+    return (dd ^ de)
+  )
+
+(*| IntegerLiteral                                     |*)
+(*|     : DecDigitNoZero DecDigitOrSeparator* DecDigit |*)
+(*|     | DecDigit                                     |*)
+(*|     ;                                              |*)
+and integerLiteral (): string Angstrom.t =
+  (
+    decDigitNoZero () >>= fun ddnz ->
+    many (decDigitOrSeparator ()) >>= fun ddoss ->
+    decDigit () >>= fun dd ->
+    return (String.concat "" (List.map (String.make 1) (ddnz::ddoss @ [dd])))
+  ) <|> (
+    decDigit () >>= fun dd ->
+    return (Char.escaped dd)
+  )
+
+(*| fragment HexDigit: [0-9a-fA-F]; |*)
+and hexDigit () =
+  satisfy(function
+      | '0'..'9'
+      | 'a'..'f'
+      | 'A'..'F' -> true
+      | _ -> false
+    )
+
+(*| fragment HexDigitOrSeparator: HexDigit | '_'; |*)
+and hexDigitOrSeparator () =
+  hexDigit ()
+  <|> char '_'
+
+(*| HexLiteral                                            |*)
+(*|     : '0' [xX] HexDigit HexDigitOrSeparator* HexDigit |*)
+(*|     | '0' [xX] HexDigit                               |*)
+(*|     ;                                                 |*)
+and hexLiteral (): string Angstrom.t =
+  char '0' *> (char 'x' <|> char 'X')
+  *> (
+    hexDigit () >>= fun hd1 ->
+    many (hexDigitOrSeparator ()) >>= fun hdoss ->
+    hexDigit () >>= fun hd2 ->
+    return (String.concat "" (List.map (String.make 1) ('0'::'x'::hd1::hdoss @ [hd2])))
+  ) <|> (
+    hexDigit () >>= fun hd ->
+    return ("0x" ^ Char.escaped hd)
+  )
+
+(*| fragment BinDigit: [01]; |*)
+and binDigit () =
+  satisfy (function
+      | '0'..'1' -> true
+      | _ -> false
+    )
+
+(*| fragment BinDigitOrSeparator: BinDigit | '_'; |*)
+and binDigitOrSeparator () =
+  binDigit ()
+  <|> char '_'
+
+(*| BinLiteral                                            |*)
+(*|     : '0' [bB] BinDigit BinDigitOrSeparator* BinDigit |*)
+(*|     | '0' [bB] BinDigit                               |*)
+(*|     ;                                                 |*)
+and binLiteral (): string Angstrom.t =
+  char '0' *> (char 'b' <|> char 'B')
+  *> (
+    binDigit () >>= fun bd1 ->
+    many (binDigitOrSeparator ()) >>= fun bdoss ->
+    binDigit () >>= fun bd2 ->
+    return (String.concat "" (List.map (String.make 1) ('0'::'b'::bd1::bdoss @ [bd2])))
+  ) <|> (
+    binDigit () >>= fun bd ->
+    return ("0b" ^ Char.escaped bd)
+  )
+
+(*| UnsignedLiteral                                            |*)
+(*|     : (IntegerLiteral | HexLiteral | BinLiteral) [uU] 'L'? |*)
+(*|     ;                                                      |*)
+and unsignedLiteral (): string Angstrom.t =
+  (integerLiteral ()
+   <!> hexLiteral
+   <!> binLiteral)
+  <* (char 'u' <|> char 'U') <* mkOpt (char 'L' *> mkString "L")
+
+(*| LongLiteral                                          |*)
+(*|     : (IntegerLiteral | HexLiteral | BinLiteral) 'L' |*)
+(*|     ;                                                |*)
+and longLiteral (): string Angstrom.t =
+  (integerLiteral ()
+   <!> hexLiteral
+   <!> binLiteral)
+  <* char 'L'
+
+(*| BooleanLiteral: 'true'| 'false'; |*)
+and booleanLiteral () =
+  mkNode "BooleanLiteral"
+  <:> mkProp "Value" (
+    (wstring "true" *> pos >>| fun pos -> NodeHolder (pos, Bool true))
+    <|>
+    (wstring "false" *> pos >>| fun pos -> NodeHolder (pos, Bool false))
+  )
+
+(*| NullLiteral: 'null'; |*)
+and nullLiteral () =
+  mkNode "NilLiteral"
+  <* wstring "nil"
+
+(*| CharacterLiteral                         |*)
+(*|     : '\'' (EscapeSeq | ~[\n\r'\\]) '\'' |*)
+(*|     ;                                    |*)
+and characterLiteral () =
+  mkNode "CharacterLiteral"
+  <* wstring "\'"
+  <* wstring "\'"
+
 (*| SECTION: lexicalIdentifiers |*)
 
 (*| fragment UnicodeDigit: UNICODE_CLASS_ND; |*)
@@ -355,18 +542,18 @@ and unicodeDigit () =
 and nonReservedIdentifier pos keywords =
   (
     List.cons <$> (letter' () <|> char '_')
-      <*> (option [] (many1
-        (fun () ->
-          letter' () <|> char '_' <|> unicodeDigit ()
+    <*> (option [] (many1
+                      (fun () ->
+                         letter' () <|> char '_' <|> unicodeDigit ()
+                      )
+                   )
         )
-      )
-    )
   ) >>= fun chars ->
-    match string_of_chars chars with
-    | String l when List.mem l keywords ->
-        fail "Keyword can't be used as identifier"
-    | str ->
-        return (NodeHolder (pos, Node ("Identifier", Off pos, [("Value", str)])))
+  match string_of_chars chars with
+  | String l when List.mem l keywords ->
+    fail "Keyword can't be used as identifier"
+  | str ->
+    return (NodeHolder (pos, Node ("Identifier", Off pos, [("Value", str)])))
 
 and hardKeywords = [
   _package;
@@ -435,6 +622,9 @@ and hardKeywords = [
   _reified;
   _expect;
   _actual;
+  "true";
+  "false";
+  "null";
 ]
 
 (*| Identifier                                                                            |*)
