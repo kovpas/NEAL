@@ -1622,7 +1622,7 @@ and loopStatement () =
 
 (*| GRAMMAR OF A FOR-IN STATEMENT |*)
 
-(*| for-in-statement -> "for" "case ???" pattern "in" expression where-clause ??? code-block |*)
+(*| for-in-statement -> "for" "case ???" pattern "in" expression where-clause ??? code-mkPropHolder |*)
 and forInStatement () =
   mkNode "ForInStatement"
   <* wstring "for"

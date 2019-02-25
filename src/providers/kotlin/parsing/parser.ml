@@ -263,13 +263,19 @@ and classMemberDeclarations () =
 (*|     | anonymousInitializer |*)
 (*|     | secondaryConstructor |*)
 (*|     ;                      |*)
-and classMemberDeclaration () = (* TODO *)
+and classMemberDeclaration () =
   (fix declaration)
   <!> companionObject
+  <!> anonymousInitializer
+  <!> secondaryConstructor
 
 (*| anonymousInitializer |*)
 (*|     : INIT NL* block |*)
 (*|     ;                |*)
+and anonymousInitializer () =
+  mkNode "AnonymousInitializer"
+  <* init <* anyspace
+  <:> mkPropE "Block" block
 
 (*| companionObject                           |*)
 (*|     : modifiers? COMPANION NL* OBJECT     |*)
@@ -285,13 +291,49 @@ and companionObject () =
   <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
   <:> mkOptProp "Body" (fix classBody)
 
+(*| functionValueParameters                                                                        |*)
+(*|     : LPAREN NL* (functionValueParameter (NL* COMMA NL* functionValueParameter)* )? NL* RPAREN |*)
+(*|     ;                                                                                          |*)
+and functionValueParameters () =
+  lparen *> anyspace
+  *> mkOpt (commaSep functionValueParameter)
+  <* anyspace <* rparen
+
+(*| functionValueParameter                                      |*)
+(*|     : modifiers? parameter (NL* ASSIGNMENT NL* expression)? |*)
+(*|     ;                                                       |*)
+and functionValueParameter () =
+  mkNode "Parameter"
+  <:> mkOptPropEmptyE modifiers
+  <:> mkPropHolder <:> parameter ()
+  <:> mkOptPropEmpty (assignment *> mkProp "DefaultValue" (fix expression))
+
 (*| parameter                                 |*)
 (*|     : simpleIdentifier NL* COLON NL* type |*)
 (*|     ;                                     |*)
 and parameter () =
-  mkNode "Parameter"
-  <:> mkPropE "Identifier" simpleIdentifier
+  mkPropE "Name" simpleIdentifier
   <:> mkProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
+
+(*| secondaryConstructor                                                                                           |*)
+(*|     : modifiers? CONSTRUCTOR NL* functionValueParameters (NL* COLON NL* constructorDelegationCall)? NL* block? |*)
+(*|     ;                                                                                                          |*)
+and secondaryConstructor () =
+  mkNode "SecondaryConstructor"
+  <:> mkOptPropEmptyE modifiers
+  <* constructor
+  <:> mkPropE "Parameters" functionValueParameters
+  <:> mkOptProp "DelegationCall" (anyspace *> colon *> anyspace *> constructorDelegationCall ())
+  <:> mkOptPropE "Block" block
+
+(*| constructorDelegationCall      |*)
+(*|     : THIS NL* valueArguments  |*)
+(*|     | SUPER NL* valueArguments |*)
+(*|     ;                          |*)
+and constructorDelegationCall () =
+  (this *> mkNode "ThisCall")
+  <|> (super *> mkNode "SuperCall")
+  <:> mkPropE "Arguments" valueArguments
 
 (*| SECTION: enumClasses |*)
 
@@ -425,11 +467,41 @@ and functionTypeParameters () =
 
 (*| SECTION: statements |*)
 
+(*| statements                                   |*)
+(*|     : (statement (semis statement)* semis?)? |*)
+(*|     ;                                        |*)
+and statements () =
+  sep_by (semis ()) (statement ()) >>= toList <* mkOpt (semis ())
+
+(*| statement                   |*)
+(*|     : (label | annotation)* |*)
+(*|     ( declaration           |*)
+(*|     | assignment            |*)
+(*|     | loopStatement         |*)
+(*|     | expression)           |*)
+(*|     ;                       |*)
+and statement () =  (* TODO *)
+  (fix declaration)
+  <!> (fix expression)
+
 (*| label                  |*)
 (*|     : IdentifierAt NL* |*)
 (*|     ;                  |*)
 and label () =
   identifierAt ()
+
+(*| controlStructureBody |*)
+(*|     : block          |*)
+(*|     | statement      |*)
+(*|     ;                |*)
+
+(*| block                                |*)
+(*|     : LCURL NL* statements NL* RCURL |*)
+(*|     ;                                |*)
+and block () =
+  lcurl *> anyspace
+  *> statements ()
+  <* anyspace <* rcurl
 
 (*| valueArguments                                                           |*)
 (*|     : LPAREN NL* RPAREN                                                  |*)
