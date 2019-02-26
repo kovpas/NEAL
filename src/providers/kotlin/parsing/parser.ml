@@ -175,8 +175,8 @@ and classParameter () =
     mkBoolProp "Variable" var
     <|> mkBoolProp "Constant" val'
   )
-  <:> mkProp "Identifier" (simpleIdentifier () <* colon)
-  <:> mkProp "Type" (fix type')
+  <:> mkPropE "Identifier" simpleIdentifier
+  <:> mkProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
   <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
 
 (*| delegationSpecifiers                                                           |*)
@@ -908,11 +908,11 @@ and primaryExpression () = (* TODO *)
   <!> functionLiteral
   <!> objectLiteral
   <!> collectionLiteral
-  (* <!> thisExpression *)
-  (* <!> superExpression *)
+  <!> thisExpression
+  <!> superExpression
   <!> ifExpression
   (* <!> whenExpression *)
-  (* <!> tryExpression *)
+  <!> tryExpression
   (* <!> jumpExpression *)
   <!> simpleIdentifier
 
@@ -1097,11 +1097,24 @@ and objectLiteral () =
 (*|   : THIS       |*)
 (*|   | THIS_AT    |*)
 (*|   ;            |*)
+and thisExpression () =
+  mkNode "ThisExpression"
+  <:> mkProp "Value" ((thisAt () <|> this) >>= mkString)
 
 (*| superExpression                                                |*)
 (*|   : SUPER (LANGLE NL* type NL* RANGLE)? (AT simpleIdentifier)? |*)
 (*|   | SUPER_AT                                                   |*)
 (*|   ;                                                            |*)
+and superExpression () =
+  mkNode "SuperExpression"
+  <:> (
+    mkProp "Value" (superAt () >>= mkString)
+    <|> (
+      super *>
+      mkOptProp "Type" (langle *> anyspace *> fix type' <* anyspace <* rangle)
+      <:> mkOptProp "Identifier" (at *> simpleIdentifier ())
+    )
+  )
 
 (*| ifExpression                                                                                                                         |*)
 (*|   : IF NL* LPAREN NL* expression NL* RPAREN NL* (controlStructureBody | SEMICOLON)                                                   |*)
@@ -1152,14 +1165,36 @@ and ifExpression () =
 (*| tryExpression                                                                |*)
 (*|   : TRY NL* block ((NL* catchBlock)+ (NL* finallyBlock)? | NL* finallyBlock) |*)
 (*|   ;                                                                          |*)
+and tryExpression () =
+  mkNode "TryExpression"
+  <* try'
+  <:> mkProp "Body" (fix block)
+  <:> (
+    (
+      mkProp "CatchClauses" (mkList1 catchBlock)
+      <:> mkOptPropE "Finally" finallyBlock
+    ) <|> mkPropE "Finally" finallyBlock
+  )
 
 (*| catchBlock                                                                    |*)
 (*|   : CATCH NL* LPAREN annotation* simpleIdentifier COLON type RPAREN NL* block |*)
 (*|   ;                                                                           |*)
+and catchBlock () = (* TODO *)
+  mkNode "Catch"
+  <* catch <* lparen <* anyspace
+  (* <:> mkOptPropEmpty "Annotations" (mkList annotation) *)
+  <:> mkPropE "Identifier" simpleIdentifier
+  <:> mkProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
+  <* anyspace <* rparen
+  <:> mkProp "Body" (fix block)
 
 (*| finallyBlock          |*)
 (*|   : FINALLY NL* block |*)
 (*|   ;                   |*)
+and finallyBlock () =
+  mkNode "Finally"
+  <* finally
+  <:> mkProp "Body" (fix block)
 
 (*| jumpExpression                       |*)
 (*|   : THROW NL* expression             |*)

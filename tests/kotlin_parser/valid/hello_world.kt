@@ -103,5 +103,28 @@ class InitOrderDemo(name: String) {
         private constructor(firstName: String = a || c && b ?: d as e, secondName: String<String>): this(arg1, arg2) {
         }
       }
+
+      this
+      this@
+
+      super
+      super<Type>@identifier
+      super<Type>
+      super@
+
+      try {
+        someting = ba
+      } catch (b: Exception1) {
+        fun String.(something: Int): MyType<Generic> where MyType: B<M> = b<T>
+      } catch (c: Exception2) {
+        object {
+          private constructor(firstName: String = a || c && b ?: d as e, secondName: String<String>): this(arg1, arg2) {
+          }
+        }
+      } catch (d: Exception3) {
+        body1 as d
+      } finally {
+
+      }
     }
 }

@@ -314,6 +314,7 @@ and colonColon = wfstring "::"
 (*| DOUBLE_SEMICOLON: ';;';                                   |*)
 (*| HASH: '#';                                                |*)
 (*| AT: '@';                                                  |*)
+and at = string "@"
 (*| QUEST_WS: '?' Hidden;                                     |*)
 and questWs = string "?" <* anyspace
 (*| QUEST_NO_WS: '?';                                         |*)
@@ -339,6 +340,16 @@ and eqEqEq = wfstring "==="
 (*| SINGLE_QUOTE: '\'';                                       |*)
 
 (*| SECTION: keywords |*)
+
+(*| RETURN_AT: 'return@' Identifier; |*)
+(* and returnAt (): string Angstrom.t = (return' *> char '@') >>= mkString *)
+(*| CONTINUE_AT: 'continue@' Identifier; |*)
+(*| BREAK_AT: 'break@' Identifier; |*)
+
+(*| THIS_AT: 'this@' Identifier; |*)
+and thisAt (): string Angstrom.t = (this *> char '@') *> return "this@"
+(*| SUPER_AT: 'super@' Identifier; |*)
+and superAt (): string Angstrom.t = (super *> char '@') *> return "super@"
 
 (*| ANNOTATION_USE_SITE_TARGET_FILE: '@file' NL* COLON; |*)
 and annotation_use_site_target_file () =
