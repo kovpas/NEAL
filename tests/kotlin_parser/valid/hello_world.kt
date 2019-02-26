@@ -41,7 +41,8 @@
 // class d {
 //   class test constructor ( enum val prop1: Type1 )
 
-  class test private constructor(enum val prop1: Char = '\$')
+class test private constructor(enum val prop1: Char = '\$', var collectionProp: Coll = [a, b],
+                                val mlTest: String = "   tests  ${b as c} another test ${a * 3 + b} $abc")
 
 //   class CountingSet(private val delegate: MutableSet<out Nothing, *, in out Any, CoolType<NestedTypeArgument>.Subtype>)
 // }

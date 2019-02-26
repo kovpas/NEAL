@@ -882,6 +882,17 @@ and primaryExpression () = (* TODO *)
   parenthesizedExpression ()
   <!> simpleIdentifier
   <!> literalConstant
+  <!> stringLiteral
+  (* <!> callableReference *)
+  (* <!> functionLiteral *)
+  (* <!> objectLiteral *)
+  <!> collectionLiteral
+(* <!> thisExpression *)
+(* <!> superExpression *)
+(* <!> ifExpression *)
+(* <!> whenExpression *)
+(* <!> tryExpression *)
+(* <!> jumpExpression *)
 
 (*| parenthesizedExpression              |*)
 (*|   : LPAREN NL* expression NL* RPAREN |*)
@@ -895,6 +906,11 @@ and parenthesizedExpression () =
 (*|   : LSQUARE NL* expression (NL* COMMA NL* expression)* NL* RSQUARE |*)
 (*|   | LSQUARE NL* RSQUARE                                            |*)
 (*|   ;                                                                |*)
+and collectionLiteral () =
+  mkNode "Collection"
+  <* lsquare <* anyspace
+  <:> mkOptProp "Values" (commaSep (fun () -> fix expression))
+  <* anyspace <* rsquare
 
 (*| literalConstant      |*)
 (*|   : BooleanLiteral   |*)
@@ -910,8 +926,8 @@ and parenthesizedExpression () =
 and literalConstant () =
   let aux = fun p t ->
     p () >>= fun v ->
-      mkProp "Type" (mkString t)
-      <:> mkProp "Value" (mkString v)
+    mkProp "Type" (mkString t)
+    <:> mkProp "Value" (mkString v)
   in
   booleanLiteral ()
   <!> nullLiteral
@@ -932,24 +948,46 @@ and literalConstant () =
 (*|   : lineStringLiteral      |*)
 (*|   | multiLineStringLiteral |*)
 (*|   ;                        |*)
+and stringLiteral () =
+  lineStringLiteral ()
+  <!> multiLineStringLiteral
 
 (*| lineStringLiteral                                                      |*)
 (*|   : QUOTE_OPEN (lineStringContent | lineStringExpression)* QUOTE_CLOSE |*)
 (*|   ;                                                                    |*)
+and lineStringLiteral () =
+  mkNode "StringLiteral"
+  <* quoteOpen
+  <:> mkOptProp "Value" (
+    mkList1 (fun () -> lineStringContent () <|> lineStringExpression ())
+  )
+  <* quoteClose
 
 (*| multiLineStringLiteral                                                                                                |*)
 (*|   : TRIPLE_QUOTE_OPEN (multiLineStringContent | multiLineStringExpression | MultiLineStringQuote)* TRIPLE_QUOTE_CLOSE |*)
 (*|   ;                                                                                                                   |*)
+and multiLineStringLiteral () =
+  mkNode "MultiLineStringLiteral"
+  <* tripleQuoteOpen <* tripleQuoteClose ()
 
 (*| lineStringContent      |*)
 (*|   : LineStrText        |*)
 (*|   | LineStrEscapedChar |*)
 (*|   | LineStrRef         |*)
 (*|   ;                    |*)
+and lineStringContent (): Combinators.holder Angstrom.t =
+  (lineStrText ()
+   <!> lineStrEscapedChar
+  ) >>= mkString
+  <!> lineStrRef
 
 (*| lineStringExpression                  |*)
 (*|   : LineStrExprStart expression RCURL |*)
 (*|   ;                                   |*)
+and lineStringExpression (): Combinators.holder Angstrom.t =
+  lineStrExprStart ()
+  *> fix expression
+  <* rcurl
 
 (*| multiLineStringContent   |*)
 (*|   : MultiLineStrText     |*)

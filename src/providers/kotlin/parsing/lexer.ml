@@ -643,7 +643,7 @@ and hardKeywords = [
 (*|     : (Letter | '_') (Letter | '_' | UnicodeDigit)*                                   |*)
 (*|     | '`' ~([\r\n] | '`' | '.' | ';' | ':' | '\\' | '/' | '[' | ']' | '<' | '>')+ '`' |*)
 (*|     ;                                                                                 |*)
-and identifier' pos =
+and identifier' pos = (* TODO *)
   nonReservedIdentifier pos hardKeywords
 
 (*| IdentifierOrSoftKey       |*)
@@ -699,6 +699,12 @@ and identifierOrSoftKey () = (* TODO *)
 and identifierAt () =
   identifierOrSoftKey () <* char '@'
 
+(*| FieldIdentifier               |*)
+(*|     : '$' IdentifierOrSoftKey |*)
+(*|     ;                         |*)
+and fieldIdentifier () =
+  char '$' *> identifierOrSoftKey ()
+
 (*| fragment UniCharacterLiteral                       |*)
 (*|     : '\\' 'u' HexDigit HexDigit HexDigit HexDigit |*)
 (*|     ;                                              |*)
@@ -743,3 +749,77 @@ and letter' () =
   <!> unicode_class_lt
   <!> unicode_class_lu
   <!> unicode_class_nl
+
+(*| SECTION: strings |*)
+
+(*| QUOTE_OPEN: '"' -> pushMode(LineString); |*)
+and quoteOpen = string "\""
+
+(*| TRIPLE_QUOTE_OPEN: '&quot;&quot;&quot;' -> pushMode(MultiLineString); |*)
+and tripleQuoteOpen = string "\"\"\""
+
+(*| mode LineString; |*)
+
+(*| QUOTE_CLOSE          |*)
+(*|     : '"' -> popMode |*)
+(*|     ;                |*)
+and quoteClose = string "\""
+
+(*| LineStrRef            |*)
+(*|     : FieldIdentifier |*)
+(*|     ;                 |*)
+and lineStrRef () =
+  fieldIdentifier ()
+
+(*| LineStrText                      |*)
+(*|     : ~('\\' | '"' | '$')+ | '$' |*)
+(*|     ;                            |*)
+and lineStrText (): string Angstrom.t =
+  many1 (fun () -> satisfy(function
+      | '\\'
+      | '"'
+      | '$' -> false
+      | _ -> true
+    ) >>| String.make 1)
+  >>= fun strs ->
+  return (String.concat "" strs)
+
+(*| LineStrEscapedChar        |*)
+(*|     : EscapedIdentifier   |*)
+(*|     | UniCharacterLiteral |*)
+(*|     ;                     |*)
+and lineStrEscapedChar (): string Angstrom.t =
+  uniCharacterLiteral ()
+  <!> escapedIdentifier
+
+(*| LineStrExprStart                     |*)
+(*|     : '${' -> pushMode(DEFAULT_MODE) |*)
+(*|     ;                                |*)
+and lineStrExprStart () =
+  string "${"
+
+(*| mode MultiLineString; |*)
+
+(*| TRIPLE_QUOTE_CLOSE                                          |*)
+(*|     : MultiLineStringQuote? '&quot;&quot;&quot;' -> popMode |*)
+(*|     ;                                                       |*)
+and tripleQuoteClose () = (* TODO *)
+  string "\"\"\""
+
+(*| MultiLineStringQuote |*)
+(*|     : '"'+           |*)
+(*|     ;                |*)
+and multiLineStringQuote () =
+  mkList1 (fun () -> (char '"' >>| String.make 1) >>= mkString)
+
+(*| MultiLineStrRef       |*)
+(*|     : FieldIdentifier |*)
+(*|     ;                 |*)
+
+(*| MultiLineStrText           |*)
+(*|     :  ~('"' | '$')+ | '$' |*)
+(*|     ;                      |*)
+
+(*| MultiLineStrExprStart                |*)
+(*|     : '${' -> pushMode(DEFAULT_MODE) |*)
+(*|     ;                                |*)
