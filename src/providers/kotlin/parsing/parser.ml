@@ -911,7 +911,7 @@ and primaryExpression () = (* TODO *)
   <!> thisExpression
   <!> superExpression
   <!> ifExpression
-  (* <!> whenExpression *)
+  <!> whenExpression
   <!> tryExpression
   (* <!> jumpExpression *)
   <!> simpleIdentifier
@@ -1138,29 +1138,69 @@ and ifExpression () =
 (*| whenSubject                                                                                     |*)
 (*|   : LPAREN (annotation* NL* VAL NL* variableDeclaration NL* ASSIGNMENT NL* )? expression RPAREN |*)
 (*|   ;                                                                                             |*)
+and whenSubject () = (* TODO *)
+  mkNode "WhenSubject"
+  <* lparen <* anyspace
+  <:> mkOptPropEmpty (
+    mkPropHolder
+    (* <:> mkOptPropEmpty "Annotations" (mkList1 annotation) *)
+    <* val'
+    <:> mkPropE "VariableDeclaration" variableDeclaration
+    <* assignment'
+  )
+  <:> mkProp "Expression" (fix expression)
+  <* anyspace <* rparen
+
 
 (*| whenExpression                                                      |*)
 (*|   : WHEN NL* whenSubject? NL* LCURL NL* (whenEntry NL* )* NL* RCURL |*)
 (*|   ;                                                                 |*)
+and whenExpression () =
+  mkNode "WhenExpression"
+  <* when'
+  <:> mkOptPropE "Subject" whenSubject
+  <* anyspace <* lcurl <* anyspace
+  <:> mkOptProp "Entries" (mkList1 whenEntry)
+  <* anyspace <* rcurl
 
 (*| whenEntry                                                                                 |*)
 (*|   : whenCondition (NL* COMMA NL* whenCondition)* NL* ARROW NL* controlStructureBody semi? |*)
 (*|   | ELSE NL* ARROW NL* controlStructureBody semi?                                         |*)
 (*|   ;                                                                                       |*)
+and whenEntry () =
+  mkNode "WhenEntry"
+  <:> (
+    mkBoolProp "ElseCondition" else'
+    <|>mkOptProp "Conditions" (commaSep whenCondition)
+  )
+  <* arrow
+  <:> mkPropE "Body" controlStructureBody
+  <* mkOptE semi
 
 (*| whenCondition  |*)
 (*|   : expression |*)
 (*|   | rangeTest  |*)
 (*|   | typeTest   |*)
 (*|   ;            |*)
+and whenCondition () =
+  mkNode "WhenCondition"
+  <:> (
+    mkPropE "In" rangeTest
+    <|> mkPropE "Is" typeTest
+    <|> mkProp "Expression" (fix expression)
+  )
 
 (*| rangeTest                     |*)
 (*|   : inOperator NL* expression |*)
 (*|   ;                           |*)
+and rangeTest () =
+  inOperator () *> anyspace *> fix expression
 
 (*| typeTest                |*)
 (*|   : isOperator NL* type |*)
 (*|   ;                     |*)
+and typeTest () =
+  isOperator () *> anyspace  *> fix type'
 
 (*| tryExpression                                                                |*)
 (*|   : TRY NL* block ((NL* catchBlock)+ (NL* finallyBlock)? | NL* finallyBlock) |*)
@@ -1182,7 +1222,7 @@ and tryExpression () =
 and catchBlock () = (* TODO *)
   mkNode "Catch"
   <* catch <* lparen <* anyspace
-  (* <:> mkOptPropEmpty "Annotations" (mkList annotation) *)
+  (* <:> mkOptPropEmpty "Annotations" (mkList1 annotation) *)
   <:> mkPropE "Identifier" simpleIdentifier
   <:> mkProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
   <* anyspace <* rparen

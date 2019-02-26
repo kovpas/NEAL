@@ -126,5 +126,13 @@ class InitOrderDemo(name: String) {
       } finally {
 
       }
+
+      when (x) {
+          1 -> a
+          2, 3..5, "string" -> b
+          in 23..75 -> b
+          is String<(a: Stirng) -> Unit> -> b
+          else -> c
+      }
     }
 }

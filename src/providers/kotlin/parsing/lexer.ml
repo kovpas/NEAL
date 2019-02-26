@@ -435,12 +435,13 @@ and doubleLiteral (): string Angstrom.t =
 (*|     : DecDigitNoZero DecDigitOrSeparator* DecDigit |*)
 (*|     | DecDigit                                     |*)
 (*|     ;                                              |*)
-and integerLiteral (): string Angstrom.t =
+and integerLiteral (): string Angstrom.t = (* TODO *)
   (
     decDigitNoZero () >>= fun ddnz ->
     many (decDigitOrSeparator ()) >>= fun ddoss ->
-    decDigit () >>= fun dd ->
-    return (String.concat "" (List.map (String.make 1) (ddnz::ddoss @ [dd])))
+    (* decDigit () >>= fun dd -> *)
+    (* return (String.concat "" (List.map (String.make 1) (ddnz::ddoss @ [dd]))) *)
+    return (String.concat "" (List.map (String.make 1) (ddnz::ddoss)))
   ) <|> (
     decDigit () >>= fun dd ->
     return (Char.escaped dd)
@@ -464,7 +465,7 @@ and hexDigitOrSeparator () =
 (*|     : '0' [xX] HexDigit HexDigitOrSeparator* HexDigit |*)
 (*|     | '0' [xX] HexDigit                               |*)
 (*|     ;                                                 |*)
-and hexLiteral (): string Angstrom.t =
+and hexLiteral (): string Angstrom.t = (* TODO *)
   char '0' *> (char 'x' <|> char 'X')
   *> ((
     hexDigit () >>= fun hd1 ->
@@ -492,7 +493,7 @@ and binDigitOrSeparator () =
 (*|     : '0' [bB] BinDigit BinDigitOrSeparator* BinDigit |*)
 (*|     | '0' [bB] BinDigit                               |*)
 (*|     ;                                                 |*)
-and binLiteral (): string Angstrom.t =
+and binLiteral (): string Angstrom.t = (* TODO *)
   char '0' *> (char 'b' <|> char 'B')
   *> (
     binDigit () >>= fun bd1 ->
