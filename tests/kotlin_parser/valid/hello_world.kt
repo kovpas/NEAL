@@ -86,5 +86,11 @@ class InitOrderDemo(name: String) {
           a = b
         }
       } else {}
+
+      { (a: String, b: String): AnotherType, i: Int ->
+        a = b<T>
+      }
+
+      fun String.(something: Int): MyType<Generic> where MyType: B<M> = b<T>
     }
 }

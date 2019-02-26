@@ -285,7 +285,7 @@ and anonymousInitializer () =
 (*|     ;                                     |*)
 and companionObject () =
   mkNode "CompanionObject"
-  <:> mkOptPropEmpty (modifiers ())
+  <:> mkOptPropEmptyE modifiers
   <* companion <* object'
   <:> mkOptPropE "Name" simpleIdentifier
   <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
@@ -303,10 +303,31 @@ and functionValueParameters () =
 (*|     : modifiers? parameter (NL* ASSIGNMENT NL* expression)? |*)
 (*|     ;                                                       |*)
 and functionValueParameter () =
-  mkOptPropEmpty (modifiers ()) >>= fun modsProp ->
+  mkOptPropEmptyE modifiers
+  >>= fun modsProp ->
   parameter ()
   <:> return modsProp
   <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
+
+(*| functionDeclaration                                                            |*)
+(*|     : modifiers?                                                               |*)
+(*|     FUN (NL* typeParameters)? (NL* receiverType NL* DOT)? NL* simpleIdentifier |*)
+(*|     NL* functionValueParameters                                                |*)
+(*|     (NL* COLON NL* type)?                                                      |*)
+(*|     (NL* typeConstraints)?                                                     |*)
+(*|     (NL* functionBody)?                                                        |*)
+(*|     ;                                                                          |*)
+
+(*| functionBody                    |*)
+(*|     : block                     |*)
+(*|     | ASSIGNMENT NL* expression |*)
+(*|     ;                           |*)
+and functionBody () =
+  (fix block)
+  <|> (
+    assignment' *> anyspace
+    *> (fix expression)
+  )
 
 (*| variableDeclaration                                          |*)
 (*|     : annotation* NL* simpleIdentifier (NL* COLON NL* type)? |*)
@@ -321,8 +342,9 @@ and variableDeclaration () = (* TODO *)
 (*|     : LPAREN NL* variableDeclaration (NL* COMMA NL* variableDeclaration)* NL* RPAREN |*)
 (*|     ;                                                                                |*)
 and multiVariableDeclaration () =
-  lparen *> anyspace
-  *> commaSep variableDeclaration
+  mkNode "MultiVariableDeclaration"
+  <* lparen <* anyspace
+  <:> mkProp "Declarations" (commaSep variableDeclaration)
   <* anyspace <* rparen
 
 (*| parameter                                 |*)
@@ -883,7 +905,7 @@ and primaryExpression () = (* TODO *)
   <!> literalConstant
   <!> stringLiteral
   <!> callableReference
-  (* <!> functionLiteral *)
+  <!> functionLiteral
   (* <!> objectLiteral *)
   <!> collectionLiteral
   (* <!> thisExpression *)
@@ -966,7 +988,7 @@ and lineStringLiteral () =
 (*| multiLineStringLiteral                                                                                                |*)
 (*|   : TRIPLE_QUOTE_OPEN (multiLineStringContent | multiLineStringExpression | MultiLineStringQuote)* TRIPLE_QUOTE_CLOSE |*)
 (*|   ;                                                                                                                   |*)
-and multiLineStringLiteral () =
+and multiLineStringLiteral () = (* TODO *)
   mkNode "MultiLineStringLiteral"
   <* tripleQuoteOpen
   <:> mkOptProp "Value" (
@@ -996,7 +1018,7 @@ and lineStringExpression () =
 (*|   | MultiLineStringQuote |*)
 (*|   | MultiLineStrRef      |*)
 (*|   ;                      |*)
-and multiLineStringContent () =
+and multiLineStringContent () = (* TODO *)
   ((multiLineStrText () (*<!> multiLineStringQuote*)) >>= mkString)
   <!> multiLineStrRef
 
@@ -1012,15 +1034,29 @@ and multiLineStringExpression () =
 (*|   : LCURL NL* statements NL* RCURL                                 |*)
 (*|   | LCURL NL* lambdaParameters? NL* ARROW NL* statements NL* RCURL |*)
 (*|   ;                                                                |*)
+and lambdaLiteral () =
+  mkNode "Lambda"
+  <* lcurl <* anyspace
+  <:> mkOptProp "Parameters" (lambdaParameters () <* arrow)
+  <:> mkPropE "Statements" statements
+  <* anyspace <* rcurl
 
 (*| lambdaParameters                                     |*)
 (*|   : lambdaParameter (NL* COMMA NL* lambdaParameter)* |*)
 (*|   ;                                                  |*)
+and lambdaParameters () =
+  commaSep lambdaParameter
 
 (*| lambdaParameter                                    |*)
 (*|   : variableDeclaration                            |*)
 (*|   | multiVariableDeclaration (NL* COLON NL* type)? |*)
 (*|   ;                                                |*)
+and lambdaParameter () =
+  variableDeclaration ()
+  <|> (
+    multiVariableDeclaration ()
+    <:> mkOptProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
+  )
 
 (*| anonymousFunction             |*)
 (*|   : FUN                       |*)
@@ -1030,11 +1066,22 @@ and multiLineStringExpression () =
 (*|   (NL* typeConstraints)?      |*)
 (*|   (NL* functionBody)?         |*)
 (*|   ;                           |*)
+and anonymousFunction () =
+  mkNode "AnonymousFunction"
+  <* fun'
+  <:> mkOptProp "Type" (fix type' <* anyspace <* dot)
+  <:> mkPropE "Parameters" functionValueParameters
+  <:> mkOptProp "ReturnType" (anyspace *> colon *> anyspace *> fix type')
+  <:> mkOptPropE "TypeConstraints" typeConstraints
+  <:> mkOptPropE "Body" functionBody
 
 (*| functionLiteral       |*)
 (*|   : lambdaLiteral     |*)
 (*|   | anonymousFunction |*)
 (*|   ;                   |*)
+and functionLiteral () =
+  lambdaLiteral ()
+  <!> anonymousFunction
 
 (*| objectLiteral                                               |*)
 (*|   : OBJECT NL* COLON NL* delegationSpecifiers NL* classBody |*)
