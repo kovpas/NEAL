@@ -775,14 +775,18 @@ and lineStrRef () =
 (*|     : ~('\\' | '"' | '$')+ | '$' |*)
 (*|     ;                            |*)
 and lineStrText (): string Angstrom.t =
-  many1 (fun () -> satisfy(function
-      | '\\'
-      | '"'
-      | '$' -> false
-      | _ -> true
-    ) >>| String.make 1)
-  >>= fun strs ->
-  return (String.concat "" strs)
+  (* string "$"
+  <|> *)
+  (
+    many1 (fun () -> satisfy(function
+        | '\\'
+        | '"'
+        | '$' -> false
+        | _ -> true
+      ) >>| String.make 1)
+    >>= fun strs ->
+      return (String.concat "" strs)
+  )
 
 (*| LineStrEscapedChar        |*)
 (*|     : EscapedIdentifier   |*)
@@ -809,17 +813,34 @@ and tripleQuoteClose () = (* TODO *)
 (*| MultiLineStringQuote |*)
 (*|     : '"'+           |*)
 (*|     ;                |*)
-and multiLineStringQuote () =
-  mkList1 (fun () -> (char '"' >>| String.make 1) >>= mkString)
+(* and multiLineStringQuote (): string Angstrom.t =
+  Angstrom.many1 (char '"') >>= fun chars ->
+  return (String.concat "" (List.map (String.make 1) chars)) *)
 
 (*| MultiLineStrRef       |*)
 (*|     : FieldIdentifier |*)
 (*|     ;                 |*)
+and multiLineStrRef () =
+  fieldIdentifier ()
 
 (*| MultiLineStrText           |*)
 (*|     :  ~('"' | '$')+ | '$' |*)
 (*|     ;                      |*)
+and multiLineStrText (): string Angstrom.t =
+  (* string "$"
+  <|> *)
+  (
+    many1 (fun () -> satisfy(function
+        | '"'
+        | '$' -> false
+        | _ -> true
+      ) >>| String.make 1)
+    >>= fun strs ->
+      return (String.concat "" strs)
+  )
 
 (*| MultiLineStrExprStart                |*)
 (*|     : '${' -> pushMode(DEFAULT_MODE) |*)
 (*|     ;                                |*)
+and multiLineStrExprStart () =
+  string "${" >>= mkString

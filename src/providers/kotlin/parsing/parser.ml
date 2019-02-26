@@ -949,8 +949,8 @@ and literalConstant () =
 (*|   | multiLineStringLiteral |*)
 (*|   ;                        |*)
 and stringLiteral () =
-  lineStringLiteral ()
-  <!> multiLineStringLiteral
+  multiLineStringLiteral ()
+  <!> lineStringLiteral
 
 (*| lineStringLiteral                                                      |*)
 (*|   : QUOTE_OPEN (lineStringContent | lineStringExpression)* QUOTE_CLOSE |*)
@@ -968,23 +968,25 @@ and lineStringLiteral () =
 (*|   ;                                                                                                                   |*)
 and multiLineStringLiteral () =
   mkNode "MultiLineStringLiteral"
-  <* tripleQuoteOpen <* tripleQuoteClose ()
+  <* tripleQuoteOpen
+  <:> mkOptProp "Value" (
+    mkList1 (fun () -> multiLineStringContent () <|> multiLineStringExpression () (*<|> (multiLineStringQuote () >>= mkString)*))
+  )
+  <* tripleQuoteClose ()
 
 (*| lineStringContent      |*)
 (*|   : LineStrText        |*)
 (*|   | LineStrEscapedChar |*)
 (*|   | LineStrRef         |*)
 (*|   ;                    |*)
-and lineStringContent (): Combinators.holder Angstrom.t =
-  (lineStrText ()
-   <!> lineStrEscapedChar
-  ) >>= mkString
+and lineStringContent () =
+  ((lineStrText () <!> lineStrEscapedChar) >>= mkString)
   <!> lineStrRef
 
 (*| lineStringExpression                  |*)
 (*|   : LineStrExprStart expression RCURL |*)
 (*|   ;                                   |*)
-and lineStringExpression (): Combinators.holder Angstrom.t =
+and lineStringExpression () =
   lineStrExprStart ()
   *> fix expression
   <* rcurl
@@ -994,10 +996,17 @@ and lineStringExpression (): Combinators.holder Angstrom.t =
 (*|   | MultiLineStringQuote |*)
 (*|   | MultiLineStrRef      |*)
 (*|   ;                      |*)
+and multiLineStringContent () =
+  ((multiLineStrText () (*<!> multiLineStringQuote*)) >>= mkString)
+  <!> multiLineStrRef
 
 (*| multiLineStringExpression                          |*)
 (*|   : MultiLineStrExprStart NL* expression NL* RCURL |*)
 (*|   ;                                                |*)
+and multiLineStringExpression () =
+  multiLineStrExprStart ()
+  *> fix expression
+  <* rcurl
 
 (*| lambdaLiteral                                                      |*)
 (*|   : LCURL NL* statements NL* RCURL                                 |*)
