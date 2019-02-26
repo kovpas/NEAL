@@ -48,7 +48,9 @@ class test private constructor(enum val prop1: Char = '\$', var collectionProp: 
                                   more multilline
                                   ${expression == true}
                                   $variable
-                                """)
+                                """) {
+
+                                }
 
 //   class CountingSet(private val delegate: MutableSet<out Nothing, *, in out Any, CoolType<NestedTypeArgument>.Subtype>)
 // }
@@ -59,16 +61,18 @@ class test private constructor(enum val prop1: Char = '\$', var collectionProp: 
 //   }
 // }
 
-// class InitOrderDemo(name: String) {
-//     private constructor(firstName: String = a || c && b ?: d as e, secondName: String<String>): this(arg1, arg2) {
-//       a = b<T>
-//       b -= a || b
+class InitOrderDemo(name: String) {
+    private constructor(firstName: String = a || c && b ?: d as e, secondName: String<String>): this(arg1, arg2) {
+      a = b<T>
+      b -= a || b
 
-//       while (a != b) {
-//         a = b
-//       }
+      while (a != b) {
+        a = b
+      }
 
-//       for ((i, k: String) in 1..5) {
-//       }
-//     }
-// }
+      for ((i, k: String) in 1..5) {
+        a = b<T>
+        b -= a || b
+      }
+    }
+}

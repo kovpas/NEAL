@@ -545,7 +545,7 @@ and forStatement () = (* TODO *)
   <:> mkProp "Variables" (
     variableDeclaration ()
     <!> multiVariableDeclaration
-  ) <* in' <:> mkProp "Expression" (fix expression) <* rparen
+  ) <* in' <* anyspace <:> mkProp "Expression" (fix expression) <* rparen
   <:> mkOptPropE "Body" controlStructureBody
 
 (*| whileStatement                                                    |*)
