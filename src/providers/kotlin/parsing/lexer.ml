@@ -530,8 +530,20 @@ and nullLiteral () =
 (*|     ;                                    |*)
 and characterLiteral () =
   mkNode "CharacterLiteral"
-  <* wstring "\'"
-  <* wstring "\'"
+  <* char '\''
+  <:> mkProp "Value" (
+    escapeSeq ()
+    <|> (
+      satisfy (function
+          | '\n'
+          | '\r'
+          | '\''
+          | '\\' -> false
+          | _ -> true)
+      >>| String.make 1
+    ) >>= mkString
+  )
+  <* char '\''
 
 (*| SECTION: lexicalIdentifiers |*)
 
@@ -686,6 +698,41 @@ and identifierOrSoftKey () = (* TODO *)
 (*|     ;                         |*)
 and identifierAt () =
   identifierOrSoftKey () <* char '@'
+
+(*| fragment UniCharacterLiteral                       |*)
+(*|     : '\\' 'u' HexDigit HexDigit HexDigit HexDigit |*)
+(*|     ;                                              |*)
+and uniCharacterLiteral (): string Angstrom.t =
+  string "\\u" *> count 4 (hexDigit ()) >>= fun digits ->
+  if List.length digits != 4
+  then fail "Invalid unicode sequence"
+  else match string_of_chars digits with
+    | String s -> return ("\\u{" ^ s ^ "}")
+    | _ -> pos >>= unreachable
+
+(*| fragment EscapedIdentifier                                   |*)
+(*|     : '\\' ('t' | 'b' | 'r' | 'n' | '\'' | '"' | '\\' | '$') |*)
+(*|     ;                                                        |*)
+and escapedIdentifier (): string Angstrom.t =
+  char '\\' *> satisfy (function
+      | 't'
+      | 'b'
+      | 'r'
+      | 'n'
+      | '\''
+      | '"'
+      | '\\'
+      | '$' -> true
+      | _ -> false) >>= fun c ->
+  return ("\\" ^ Char.escaped c)
+
+(*| fragment EscapeSeq        |*)
+(*|     : UniCharacterLiteral |*)
+(*|     | EscapedIdentifier   |*)
+(*|     ;                     |*)
+and escapeSeq (): string Angstrom.t =
+  uniCharacterLiteral ()
+  <!> escapedIdentifier
 
 (*| SECTION: characters |*)
 

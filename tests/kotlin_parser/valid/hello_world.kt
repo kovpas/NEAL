@@ -41,7 +41,7 @@
 // class d {
 //   class test constructor ( enum val prop1: Type1 )
 
-// class test private constructor(enum val prop1: Type1 = 1.2..2e-3 as Int)
+  class test private constructor(enum val prop1: Char = '\$')
 
 //   class CountingSet(private val delegate: MutableSet<out Nothing, *, in out Any, CoolType<NestedTypeArgument>.Subtype>)
 // }
