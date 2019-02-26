@@ -86,6 +86,8 @@ class InitOrderDemo(name: String) {
           a = b
         }
       } else {}
+      if (a >= b && c != d || a <= d)
+      // if (a >= 3 && b < 1)
 
       { (a: String, b: String): AnotherType, i: Int ->
         a = b<T>
@@ -100,7 +102,7 @@ class InitOrderDemo(name: String) {
       }
 
       object {
-        private constructor(firstName: String = a || c && b ?: d as e, secondName: String<String>): this(arg1, arg2) {
+        private constructor(firstName: String = (a > c && b >= d), secondName: String<String>): this(arg1, arg2) {
         }
       }
 
@@ -134,5 +136,13 @@ class InitOrderDemo(name: String) {
           is String<(a: Stirng) -> Unit> -> b
           else -> c
       }
+
+      throw someExpression
+      return true
+      return@ false
+      continue
+      continue@
+      break
+      break@
     }
 }

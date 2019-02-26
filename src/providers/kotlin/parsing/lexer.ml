@@ -342,9 +342,11 @@ and eqEqEq = wfstring "==="
 (*| SECTION: keywords |*)
 
 (*| RETURN_AT: 'return@' Identifier; |*)
-(* and returnAt (): string Angstrom.t = (return' *> char '@') >>= mkString *)
+and returnAt (): string Angstrom.t = (return' *> char '@') *> return "return@"
 (*| CONTINUE_AT: 'continue@' Identifier; |*)
+and continueAt (): string Angstrom.t = (continue *> char '@') *> return "continue@"
 (*| BREAK_AT: 'break@' Identifier; |*)
+and breakAt (): string Angstrom.t = (break *> char '@') *> return "break@"
 
 (*| THIS_AT: 'this@' Identifier; |*)
 and thisAt (): string Angstrom.t = (this *> char '@') *> return "this@"

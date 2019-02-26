@@ -913,7 +913,7 @@ and primaryExpression () = (* TODO *)
   <!> ifExpression
   <!> whenExpression
   <!> tryExpression
-  (* <!> jumpExpression *)
+  <!> jumpExpression
   <!> simpleIdentifier
 
 (*| parenthesizedExpression              |*)
@@ -1242,6 +1242,24 @@ and finallyBlock () =
 (*|   | CONTINUE | CONTINUE_AT           |*)
 (*|   | BREAK | BREAK_AT                 |*)
 (*|   ;                                  |*)
+and jumpExpression () =
+  (
+    throw
+    *> mkNode "ThrowStatement"
+    <:> mkProp "Expression" (fix expression)
+  ) <|> (
+    (returnAt () <|> return')
+    >>= fun kwd ->
+    mkNode "ReturnStatement"
+    <:> mkProp "Keyword" (mkString kwd)
+    <:> mkProp "Expression" (fix expression)
+  ) <|> (
+    mkNode "JumpExpression"
+    <:> mkProp "Keyword" ((
+        continueAt () <|> continue
+        <|> breakAt () <|> break
+      ) >>= mkString)
+  )
 
 (*| callableReference                                                 |*)
 (*|   : (receiverType? NL* COLONCOLON NL* (simpleIdentifier | CLASS)) |*)
@@ -1280,9 +1298,9 @@ and equalityOperator () =
 (*|     | LE           |*)
 (*|     | GE           |*)
 (*|     ;              |*)
-and comparisonOperator () = (* TODO *)
-  (* langle <|> rangle <|>  *)
+and comparisonOperator () =
   le <|> ge
+  <|> ((langle <|> rangle) >>| String.make 1)
 
 (*| inOperator        |*)
 (*|     : IN | NOT_IN |*)
@@ -1315,7 +1333,7 @@ and multiplicativeOperator () =
 (*|     | AS_SAFE |*)
 (*|     ;         |*)
 and asOperator () =
-  as' <|> asSafe
+  asSafe <|> as'
 
 (*| prefixUnaryOperator |*)
 (*|     : INCR          |*)
@@ -1333,7 +1351,7 @@ and prefixUnaryOperator () =
 (*|     | EXCL_NO_WS excl |*)
 (*|     ;                 |*)
 and postfixUnaryOperator () =
-  (incr <|> decr <|> (exclNoWs <* excl ())) >>= mkString
+  (incr <|> decr <|> (exclNoWs *> excl () *> return "!!")) >>= mkString
 
 (*| excl             |*)
 (*|     : EXCL_NO_WS |*)
