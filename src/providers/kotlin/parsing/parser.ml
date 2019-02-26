@@ -864,25 +864,25 @@ and callSuffix () = (* TODO *)
 (*|   : LANGLE NL* typeProjection (NL* COMMA NL* typeProjection)* NL* RANGLE |*)
 (*|   ;                                                                      |*)
 and typeArguments () =
-  (langle <* anyspace)
+  langle *> anyspace
   *> (commaSep typeProjection)
-  <* (anyspace *> rangle)
+  <* anyspace <* rangle
 
 (*| valueArguments                                                           |*)
 (*|     : LPAREN NL* RPAREN                                                  |*)
 (*|     | LPAREN NL* valueArgument (NL* COMMA NL* valueArgument)* NL* RPAREN |*)
 (*|     ;                                                                    |*)
 and valueArguments () =
-  lparen
+  lparen *> anyspace
   *> mkOpt (commaSep valueArgument)
-  <* rparen
+  <* anyspace <* rparen
 
 (*| valueArgument                                                                      |*)
 (*|     : annotation? NL* (simpleIdentifier NL* ASSIGNMENT NL* )? MULT? NL* expression |*)
 (*|     ;                                                                              |*)
-and valueArgument () =
+and valueArgument () = (* TODO *)
   (* mkOptE annotation <* *)
-  mkOpt (simpleIdentifier () <* assignment') <* mkOpt (mult *> mkString "*") <* fix expression
+  mkOpt (simpleIdentifier () <* assignment') *> mkOpt (mult *> mkString "*") *> fix expression
 
 (*| primaryExpression            |*)
 (*|   : parenthesizedExpression  |*)
@@ -906,7 +906,7 @@ and primaryExpression () = (* TODO *)
   <!> stringLiteral
   <!> callableReference
   <!> functionLiteral
-  (* <!> objectLiteral *)
+  <!> objectLiteral
   <!> collectionLiteral
   (* <!> thisExpression *)
   (* <!> superExpression *)
@@ -1087,6 +1087,11 @@ and functionLiteral () =
 (*|   : OBJECT NL* COLON NL* delegationSpecifiers NL* classBody |*)
 (*|   | OBJECT NL* classBody                                    |*)
 (*|   ;                                                         |*)
+and objectLiteral () =
+  mkNode "Object"
+  <* object'
+  <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
+  <:> mkProp "Body" (fix classBody)
 
 (*| thisExpression |*)
 (*|   : THIS       |*)

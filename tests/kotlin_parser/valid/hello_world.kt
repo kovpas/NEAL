@@ -92,5 +92,16 @@ class InitOrderDemo(name: String) {
       }
 
       fun String.(something: Int): MyType<Generic> where MyType: B<M> = b<T>
+      fun String.(something: Int): MyType<Generic> where MyType: B<M> { b<T> }
+
+      object: MyString by Delegate {
+        private constructor(firstName: String = a || c && b ?: d as e, secondName: String<String>): this(arg1, arg2) {
+        }
+      }
+
+      object {
+        private constructor(firstName: String = a || c && b ?: d as e, secondName: String<String>): this(arg1, arg2) {
+        }
+      }
     }
 }
