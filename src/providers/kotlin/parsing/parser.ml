@@ -304,9 +304,9 @@ and functionValueParameters () =
 (*|     ;                                                       |*)
 and functionValueParameter () =
   mkOptPropEmpty (modifiers ()) >>= fun modsProp ->
-    parameter ()
-    <:> return modsProp
-    <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
+  parameter ()
+  <:> return modsProp
+  <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
 
 (*| variableDeclaration                                          |*)
 (*|     : annotation* NL* simpleIdentifier (NL* COLON NL* type)? |*)
@@ -888,7 +888,7 @@ and primaryExpression () = (* TODO *)
   <!> collectionLiteral
   (* <!> thisExpression *)
   (* <!> superExpression *)
-  (* <!> ifExpression *)
+  <!> ifExpression
   (* <!> whenExpression *)
   (* <!> tryExpression *)
   (* <!> jumpExpression *)
@@ -1055,6 +1055,20 @@ and multiLineStringExpression () =
 (*|   : IF NL* LPAREN NL* expression NL* RPAREN NL* (controlStructureBody | SEMICOLON)                                                   |*)
 (*|   | IF NL* LPAREN NL* expression NL* RPAREN NL* controlStructureBody? NL* SEMICOLON? NL* ELSE NL* (controlStructureBody | SEMICOLON) |*)
 (*|   ;                                                                                                                                  |*)
+and ifExpression () =
+  mkNode "IfExpression"
+  <* if' <* lparen <* anyspace
+  <:> mkProp "Condition" (fix expression)
+  <* anyspace <* rparen
+  <:> (
+    (
+      mkPropHolder
+      <:> mkOptPropE "Consequent" controlStructureBody <* mkOpt (semicolon *> mkString ";")
+      <* else'
+      <:> (mkOptPropE "Alternate" controlStructureBody <|> mkOpt (semicolon *> mkString ";"))
+    )
+    <|> (mkOptPropE "Consequent" controlStructureBody <|> mkOpt (semicolon *> mkString ";"))
+  )
 
 (*| whenSubject                                                                                     |*)
 (*|   : LPAREN (annotation* NL* VAL NL* variableDeclaration NL* ASSIGNMENT NL* )? expression RPAREN |*)

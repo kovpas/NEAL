@@ -76,5 +76,15 @@ class InitOrderDemo(name: String) {
         b -= a || b
       }
       A::ident
+
+      if (a != b);
+      if (a != b) {}
+      if (a != b) {} else;
+      if (a != b) else;
+      if (a != b) {
+        while (a != b) {
+          a = b
+        }
+      } else {}
     }
 }
