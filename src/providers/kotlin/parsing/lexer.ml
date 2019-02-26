@@ -455,7 +455,7 @@ and hexDigitOrSeparator () =
 (*|     ;                                                 |*)
 and hexLiteral (): string Angstrom.t =
   char '0' *> (char 'x' <|> char 'X')
-  *> (
+  *> ((
     hexDigit () >>= fun hd1 ->
     many (hexDigitOrSeparator ()) >>= fun hdoss ->
     hexDigit () >>= fun hd2 ->
@@ -463,7 +463,7 @@ and hexLiteral (): string Angstrom.t =
   ) <|> (
     hexDigit () >>= fun hd ->
     return ("0x" ^ Char.escaped hd)
-  )
+  ))
 
 (*| fragment BinDigit: [01]; |*)
 and binDigit () =

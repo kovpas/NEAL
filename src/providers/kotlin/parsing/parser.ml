@@ -303,10 +303,10 @@ and functionValueParameters () =
 (*|     : modifiers? parameter (NL* ASSIGNMENT NL* expression)? |*)
 (*|     ;                                                       |*)
 and functionValueParameter () =
-  mkNode "Parameter"
-  <:> mkOptPropEmptyE modifiers
-  <:> mkPropHolder <:> parameter ()
-  <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
+  mkOptPropEmpty (modifiers ()) >>= fun modsProp ->
+    parameter ()
+    <:> return modsProp
+    <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
 
 (*| variableDeclaration                                          |*)
 (*|     : annotation* NL* simpleIdentifier (NL* COLON NL* type)? |*)
@@ -329,7 +329,8 @@ and multiVariableDeclaration () =
 (*|     : simpleIdentifier NL* COLON NL* type |*)
 (*|     ;                                     |*)
 and parameter () =
-  mkPropE "Name" simpleIdentifier
+  mkNode "Parameter"
+  <:> mkPropE "Name" simpleIdentifier
   <:> mkProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
 
 (*| secondaryConstructor                                                                                           |*)
@@ -478,9 +479,9 @@ and functionType () =
 (*|     : LPAREN NL* (parameter | type)? (NL* COMMA NL* (parameter | type))* NL* RPAREN |*)
 (*|     ;                                                                               |*)
 and functionTypeParameters () =
-  lparen
+  lparen *> anyspace
   *> mkOpt (commaSep (fun () -> parameter () <|> (fix type')))
-  <* rparen
+  <* anyspace <* rparen
 
 (*| SECTION: statements |*)
 
@@ -700,7 +701,6 @@ and infixFunctionCall () =
     (mkPropE "Identifier" simpleIdentifier)
     rangeExpression
 
-
 (*| rangeExpression                                        |*)
 (*|   : additiveExpression (RANGE NL* additiveExpression)* |*)
 (*|   ;                                                    |*)
@@ -880,19 +880,19 @@ and valueArgument () =
 (*|   ;                          |*)
 and primaryExpression () = (* TODO *)
   parenthesizedExpression ()
-  <!> simpleIdentifier
   <!> literalConstant
   <!> stringLiteral
-  (* <!> callableReference *)
+  <!> callableReference
   (* <!> functionLiteral *)
   (* <!> objectLiteral *)
   <!> collectionLiteral
-(* <!> thisExpression *)
-(* <!> superExpression *)
-(* <!> ifExpression *)
-(* <!> whenExpression *)
-(* <!> tryExpression *)
-(* <!> jumpExpression *)
+  (* <!> thisExpression *)
+  (* <!> superExpression *)
+  (* <!> ifExpression *)
+  (* <!> whenExpression *)
+  (* <!> tryExpression *)
+  (* <!> jumpExpression *)
+  <!> simpleIdentifier
 
 (*| parenthesizedExpression              |*)
 (*|   : LPAREN NL* expression NL* RPAREN |*)
@@ -1105,6 +1105,14 @@ and multiLineStringExpression () =
 (*| callableReference                                                 |*)
 (*|   : (receiverType? NL* COLONCOLON NL* (simpleIdentifier | CLASS)) |*)
 (*|   ;                                                               |*)
+and callableReference () =
+  mkNode "CallableReference"
+  <:> mkOptPropE "ReceiverType" receiverType
+  <* colonColon
+  <:> (
+    mkBoolProp "ClassType" (class' >>= mkString)
+    <|> mkPropE "Identifier" simpleIdentifier
+  )
 
 (*| assignmentAndOperator |*)
 (*|   : ADD_ASSIGNMENT    |*)
