@@ -590,7 +590,7 @@ and quest () =
 (*| userType                                           |*)
 (*|     : simpleUserType (NL* DOT NL* simpleUserType)* |*)
 (*|     ;                                              |*)
-and userType () = (* TODO: join types up to <Generic> *)
+and userType () = (* TODO??: join types up to <Generic> *)
   mkNode "UserType"
   <:> mkProp "Types" (sep_by1 (anyspace *> dot <* anyspace) (simpleUserType ()) >>= toList)
 
@@ -1021,11 +1021,21 @@ and navigationSuffix () =
 (*|   ;                                                |*)
 and callSuffix () = (* TODO *)
   mkOptE typeArguments
-  <* valueArguments ()
+  <* (
+    valueArguments ()
+    <|> (
+      mkOptE valueArguments
+      <* annotatedLambda()
+    )
+  )
 
 (*| annotatedLambda                          |*)
 (*|   : annotation* label? NL* lambdaLiteral |*)
 (*|   ;                                      |*)
+and annotatedLambda () =
+  (* annotation *> *)
+  mkOptE label
+  *> lambdaLiteral ()
 
 (*| typeArguments                                                            |*)
 (*|   : LANGLE NL* typeProjection (NL* COMMA NL* typeProjection)* NL* RANGLE |*)
