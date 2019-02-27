@@ -1,5 +1,5 @@
 class a {
   constructor() {
-    if (a >= 3 && b > 1 || c < d != e <= f )
+    var a: Int = 1234567890
   }
 }

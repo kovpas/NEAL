@@ -108,6 +108,17 @@ and topLevelObject () =
   (fix declaration)
   <* mkOptE semis
 
+(*| typeAlias                                                                                      |*)
+(*|     : modifiers? TYPE_ALIAS NL* simpleIdentifier (NL* typeParameters)? NL* ASSIGNMENT NL* type |*)
+(*|     ;                                                                                          |*)
+and typeAlias () =
+  mkNode "TypeAlias"
+  <:> mkOptPropEmptyE modifiers
+  <* typeAlias'
+  <:> mkPropE "Name" simpleIdentifier
+  <:> mkOptPropE "TypeParameters" typeParameters
+  <:> mkProp "Type" (anyspace *> assignment' *> anyspace *> (fix type'))
+
 (*| declaration               |*)
 (*|     : classDeclaration    |*)
 (*|     | objectDeclaration   |*)
@@ -115,12 +126,12 @@ and topLevelObject () =
 (*|     | propertyDeclaration |*)
 (*|     | typeAlias           |*)
 (*|     ;                     |*)
-and declaration _ = (* TODO *)
+and declaration _ =
   classDeclaration ()
   <!> objectDeclaration
   <!> functionDeclaration
   <!> propertyDeclaration
-(* <!> typeAlias *)
+  <!> typeAlias
 
 (*| SECTION: classes |*)
 
@@ -131,8 +142,10 @@ and declaration _ = (* TODO *)
 (*|     (NL* typeConstraints)?                                |*)
 (*|     (NL* classBody | NL* enumClassBody)?                  |*)
 (*|     ;                                                     |*)
-and classDeclaration () = (* TODO *)
-  mkOptPropEmptyE modifiers >>= (fun mods ->
+and classDeclaration () =
+  mkOptPropEmptyE modifiers >>=
+  (
+    fun mods ->
       ((class' *> mkNode "Class") <|> (interface *> mkNode "Interface"))
       <:> (return mods)
       <:> mkPropE "Name" simpleIdentifier
@@ -141,8 +154,8 @@ and classDeclaration () = (* TODO *)
       <:> mkOptPropE "PrimaryConstructor" primaryConstructor
       <:> mkOptProp "DelegationSpecifiers" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
       <:> mkOptPropE "TypeConstraints" typeConstraints
-      <:> mkOptProp "Body" (fix classBody)
-    )
+      <:> mkOptProp "Body" (fix classBody <|> fix enumClassBody)
+  )
 
 (*| primaryConstructor                                   |*)
 (*|     : (modifiers? CONSTRUCTOR NL* )? classParameters |*)
@@ -157,7 +170,7 @@ and primaryConstructor () =
 (*|     : LCURL NL* classMemberDeclarations NL* RCURL |*)
 (*|     ;                                             |*)
 and classBody _ =
-  lcurl *> anyspace *> classMemberDeclarations () <* anyspace <* rcurl
+  lcurl *> anyspace *> (classMemberDeclarations () >>= toList) <* anyspace <* rcurl
 
 (*| classParameters                                                                |*)
 (*|     : LPAREN NL* (classParameter (NL* COMMA NL* classParameter)* )? NL* RPAREN |*)
@@ -220,7 +233,7 @@ and explicitDelegation () =
 (*|   ;                                                                    |*)
 and typeParameters () =
   langle *> anyspace
-  *> (commaSep typeParameter)
+  *> commaSep typeParameter
   <* rangle <* anyspace
 
 (*| typeParameter                                                          |*)
@@ -254,8 +267,7 @@ and typeConstraint () = (* TODO - annotation *)
 (*|     : (classMemberDeclaration semis?)* |*)
 (*|     ;                                  |*)
 and classMemberDeclarations () =
-  mkList1 (fun () -> classMemberDeclaration () <* mkOptE semis)
-  |> mkOpt
+  many (classMemberDeclaration () <* mkOptE semis)
 
 (*| classMemberDeclaration     |*)
 (*|     : declaration          |*)
@@ -499,6 +511,37 @@ and constructorDelegationCall () =
   <:> mkPropE "Arguments" valueArguments
 
 (*| SECTION: enumClasses |*)
+
+(*| enumClassBody                                                                       |*)
+(*|     : LCURL NL* enumEntries? (NL* SEMICOLON NL* classMemberDeclarations)? NL* RCURL |*)
+(*|     ;                                                                               |*)
+and enumClassBody _ =
+  lcurl *> anyspace
+  *> option [] (enumEntries ())
+  >>= (
+    fun entries ->
+      option [] (semicolon *> classMemberDeclarations ())
+      >>= (
+        fun cmd ->
+          return (entries @ cmd)
+      )
+  ) >>= toList <* anyspace <* rcurl
+
+(*| enumEntries                                           |*)
+(*|     : enumEntry (NL* COMMA NL* enumEntry)* NL* COMMA? |*)
+(*|     ;                                                 |*)
+and enumEntries (): Combinators.holder list Angstrom.t =
+  sep_by1 comma (enumEntry ()) <* option ' ' comma
+
+(*| enumEntry                                                                       |*)
+(*|     : (modifiers NL* )? simpleIdentifier (NL* valueArguments)? (NL* classBody)? |*)
+(*|     ;                                                                           |*)
+and enumEntry () =
+  mkNode "EnumEntry"
+  <:> mkOptPropEmptyE modifiers
+  <:> mkPropE "Name" simpleIdentifier
+  <:> mkOptPropE "Arguments" valueArguments
+  <:> mkOptProp "Block" (fix classBody)
 
 (*| SECTION: types |*)
 
@@ -989,7 +1032,7 @@ and callSuffix () = (* TODO *)
 (*|   ;                                                                      |*)
 and typeArguments () =
   langle *> anyspace
-  *> (commaSep typeProjection)
+  *> commaSep typeProjection
   <* anyspace <* rangle
 
 (*| valueArguments                                                           |*)
@@ -1082,11 +1125,11 @@ and literalConstant () =
     mkNode "NumericLiteral"
     <:> (
       aux realLiteral "Real"
-      <|> aux integerLiteral "Integer"
       <|> aux hexLiteral "Hex"
       <|> aux binLiteral "Bin"
       <|> aux longLiteral "Long"
       <|> aux unsignedLiteral "Unsigned"
+      <|> aux integerLiteral "Integer"
     )
   )
 

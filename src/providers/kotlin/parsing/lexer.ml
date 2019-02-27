@@ -48,8 +48,8 @@ let val' = wstring _val'
 let _var = "var"
 let var = wstring _var
 (*| TYPE_ALIAS: 'typealias';    |*)
-let _type_alias = "typealias"
-let type_alias = wstring _type_alias
+let _typeAlias = "typealias"
+let typeAlias' = wstring _typeAlias
 (*| CONSTRUCTOR: 'constructor'; |*)
 let _constructor = "constructor"
 let constructor = wstring _constructor
@@ -375,11 +375,7 @@ and decDigitNoZero () =
 
 (*| fragment DecDigitOrSeparator: DecDigit | '_'; |*)
 and decDigitOrSeparator () =
-  satisfy(function
-      | '0'..'9'
-      | '_' -> true
-      | _ -> false
-    )
+  decDigit () <|> char '_'
 
 (*| fragment DecDigits                           |*)
 (*|     : DecDigit DecDigitOrSeparator* DecDigit |*)
@@ -469,15 +465,18 @@ and hexDigitOrSeparator () =
 (*|     ;                                                 |*)
 and hexLiteral (): string Angstrom.t = (* TODO *)
   char '0' *> (char 'x' <|> char 'X')
-  *> ((
-    hexDigit () >>= fun hd1 ->
-    many (hexDigitOrSeparator ()) >>= fun hdoss ->
-    hexDigit () >>= fun hd2 ->
-    return (String.concat "" (List.map (String.make 1) ('0'::'x'::hd1::hdoss @ [hd2])))
-  ) <|> (
-    hexDigit () >>= fun hd ->
-    return ("0x" ^ Char.escaped hd)
-  ))
+  *> (
+    (
+      hexDigit () >>= fun hd1 ->
+      many (hexDigitOrSeparator ()) >>= fun hdoss ->
+      (* hexDigit () >>= fun hd2 ->
+      return (String.concat "" (List.map (String.make 1) ('0'::'x'::hd1::hdoss @ [hd2]))) *)
+      return (String.concat "" (List.map (String.make 1) ('0'::'x'::hd1::hdoss)))
+    ) <|> (
+      hexDigit () >>= fun hd ->
+      return ("0x" ^ Char.escaped hd)
+    )
+  )
 
 (*| fragment BinDigit: [01]; |*)
 and binDigit () =
@@ -498,31 +497,34 @@ and binDigitOrSeparator () =
 and binLiteral (): string Angstrom.t = (* TODO *)
   char '0' *> (char 'b' <|> char 'B')
   *> (
-    binDigit () >>= fun bd1 ->
-    many (binDigitOrSeparator ()) >>= fun bdoss ->
-    binDigit () >>= fun bd2 ->
-    return (String.concat "" (List.map (String.make 1) ('0'::'b'::bd1::bdoss @ [bd2])))
-  ) <|> (
-    binDigit () >>= fun bd ->
-    return ("0b" ^ Char.escaped bd)
+    (
+      binDigit () >>= fun bd1 ->
+      many (binDigitOrSeparator ()) >>= fun bdoss ->
+      (* binDigit () >>= fun bd2 ->
+      return (String.concat "" (List.map (String.make 1) ('0'::'b'::bd1::bdoss @ [bd2]))) *)
+      return (String.concat "" (List.map (String.make 1) ('0'::'b'::bd1::bdoss)))
+    ) <|> (
+      binDigit () >>= fun bd ->
+      return ("0b" ^ Char.escaped bd)
+    )
   )
 
 (*| UnsignedLiteral                                            |*)
 (*|     : (IntegerLiteral | HexLiteral | BinLiteral) [uU] 'L'? |*)
 (*|     ;                                                      |*)
 and unsignedLiteral (): string Angstrom.t =
-  (integerLiteral ()
+  (binLiteral ()
    <!> hexLiteral
-   <!> binLiteral)
+   <!> integerLiteral)
   <* (char 'u' <|> char 'U') <* mkOpt (char 'L' *> mkString "L")
 
 (*| LongLiteral                                          |*)
 (*|     : (IntegerLiteral | HexLiteral | BinLiteral) 'L' |*)
 (*|     ;                                                |*)
 and longLiteral (): string Angstrom.t =
-  (integerLiteral ()
+  (binLiteral ()
    <!> hexLiteral
-   <!> binLiteral)
+   <!> integerLiteral)
   <* char 'L'
 
 (*| BooleanLiteral: 'true'| 'false'; |*)
@@ -590,7 +592,7 @@ and hardKeywords = [
   _object';
   _val';
   _var;
-  _type_alias;
+  _typeAlias;
   _constructor;
   _by;
   _companion;

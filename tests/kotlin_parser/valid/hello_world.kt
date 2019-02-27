@@ -130,7 +130,7 @@ class InitOrderDemo(name: String) {
       when (x) {
           1 -> a
           2, 3..5, "string" -> b
-          in 23..75 -> b
+          in 23..197 -> b
           is String<(a: Stirng) -> Unit> -> b
           else -> c
       }
@@ -161,5 +161,28 @@ private object MyClass: A by delegateA, B by delegateB {
     get() {
       blah = value
     }
+
+  typealias b = c
 }
 
+
+enum class Direction {
+    NORTH, SOUTH, WEST, EAST
+}
+enum class Numbers(val num: Int) {
+        HEX(0xFF0000),
+        BINARY(0b001100),
+        INTEGER(197),
+}
+
+enum class ProtocolState {
+    WAITING {
+        override fun signal() = TALKING
+    },
+
+    TALKING {
+        override fun signal() = WAITING
+    };
+
+    abstract fun signal(): ProtocolState
+}
