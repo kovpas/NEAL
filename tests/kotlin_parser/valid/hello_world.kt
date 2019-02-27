@@ -86,8 +86,6 @@ class InitOrderDemo(name: String) {
           a = b
         }
       } else {}
-      if (a >= b && c != d || a <= d) {}
-      if (a >= 3 && b < 1) {}
 
       { (a: String, b: String): AnotherType, i: Int ->
         a = b<T>
@@ -145,6 +143,10 @@ class InitOrderDemo(name: String) {
       break
       break@
     }
+}
+
+public fun<E> fullName(firstName: String = "Pavel", lastName: String = "Mazurin"): String {
+  return firstName + " " + lastName
 }
 
 private object Pasha: A by delegateA, B by delegateB {

@@ -118,9 +118,9 @@ and topLevelObject () =
 and declaration _ = (* TODO *)
   classDeclaration ()
   <!> objectDeclaration
-(* <!> functionDeclaration
-   <!> propertyDeclaration
-   <!> typeAlias *)
+  <!> functionDeclaration
+(* <!> propertyDeclaration *)
+(* <!> typeAlias *)
 
 (*| SECTION: classes |*)
 
@@ -133,7 +133,7 @@ and declaration _ = (* TODO *)
 (*|     ;                                                     |*)
 and classDeclaration () = (* TODO *)
   mkOptPropEmptyE modifiers >>= (fun mods ->
-      ((class' *> mkNode "ClassDeclaration") <|> (interface *> mkNode "InterfaceDeclaration"))
+      ((class' *> mkNode "Class") <|> (interface *> mkNode "Interface"))
       <:> (return mods)
       <:> mkPropE "Name" simpleIdentifier
       <:> mkOptPropE "TypeParameters" typeParameters
@@ -317,6 +317,18 @@ and functionValueParameter () =
 (*|     (NL* typeConstraints)?                                                     |*)
 (*|     (NL* functionBody)?                                                        |*)
 (*|     ;                                                                          |*)
+and functionDeclaration () =
+  mkNode "Function"
+  <:> mkOptPropEmptyE modifiers
+  <* fun'
+  <:> mkOptPropE "TypeParameters" typeParameters
+  <:> mkOptProp "ReceiverType" (receiverType () <* dot)
+  <:> mkPropE "Name" simpleIdentifier
+  <:> mkPropE "Parameters" functionValueParameters
+  <:> mkOptProp "ReturnType" (anyspace *> colon *> anyspace *> fix type')
+  <:> mkOptPropE "TypeConstraints" typeConstraints
+  <:> mkOptPropE "Body" functionBody
+
 
 (*| functionBody                    |*)
 (*|     : block                     |*)
@@ -333,7 +345,7 @@ and functionBody () =
 (*|     : annotation* NL* simpleIdentifier (NL* COLON NL* type)? |*)
 (*|     ;                                                        |*)
 and variableDeclaration () = (* TODO *)
-  mkNode "VariableDeclaration"
+  mkNode "Variable"
   (* <* annotation () *)
   <:> mkPropE "Identifier" simpleIdentifier
   <:> mkOptProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
@@ -342,7 +354,7 @@ and variableDeclaration () = (* TODO *)
 (*|     : LPAREN NL* variableDeclaration (NL* COMMA NL* variableDeclaration)* NL* RPAREN |*)
 (*|     ;                                                                                |*)
 and multiVariableDeclaration () =
-  mkNode "MultiVariableDeclaration"
+  mkNode "MultiVariable"
   <* lparen <* anyspace
   <:> mkProp "Declarations" (commaSep variableDeclaration)
   <* anyspace <* rparen
@@ -362,7 +374,7 @@ and parameter () =
 (*|     (NL* classBody)?                      |*)
 (*|     ;                                     |*)
 and objectDeclaration () =
-  mkNode "ObjectDeclaration"
+  mkNode "Object"
   <:> mkOptPropEmptyE modifiers
   <* object'
   <:> mkPropE "Name" simpleIdentifier
@@ -1160,7 +1172,7 @@ and whenSubject () = (* TODO *)
     mkPropHolder
     (* <:> mkOptPropEmpty "Annotations" (mkList1 annotation) *)
     <* val'
-    <:> mkPropE "VariableDeclaration" variableDeclaration
+    <:> mkPropE "Variable" variableDeclaration
     <* assignment'
   )
   <:> mkProp "Expression" (fix expression)
