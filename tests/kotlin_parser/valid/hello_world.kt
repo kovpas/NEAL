@@ -86,8 +86,8 @@ class InitOrderDemo(name: String) {
           a = b
         }
       } else {}
-      if (a >= b && c != d || a <= d)
-      // if (a >= 3 && b < 1)
+      if (a >= b && c != d || a <= d) {}
+      if (a >= 3 && b < 1) {}
 
       { (a: String, b: String): AnotherType, i: Int ->
         a = b<T>

@@ -219,9 +219,9 @@ and explicitDelegation () =
 (*|   : LANGLE NL* typeParameter (NL* COMMA NL* typeParameter)* NL* RANGLE |*)
 (*|   ;                                                                    |*)
 and typeParameters () =
-  (langle <* anyspace)
+  langle *> anyspace
   *> (commaSep typeParameter)
-  <* (rangle <* anyspace)
+  <* rangle <* anyspace
 
 (*| typeParameter                                                          |*)
 (*|   : typeParameterModifiers? NL* simpleIdentifier (NL* COLON NL* type)? |*)
@@ -651,10 +651,10 @@ and auxExpression' name prop expr =
   (* auxExpression'' name prop expr expr *)
   let rec aux = fun e ->
     (prop >>= fun opProp ->
-     mkNode name
-     <:> mkProp "Lhs" (return e)
-     <:> (return opProp)
-     <:> mkProp "Rhs" (expr () >>= aux))
+      mkNode name
+      <:> mkProp "Lhs" (return e)
+      <:> (return opProp)
+      <:> mkProp "Rhs" (expr () >>= aux))
     <|> (return e)
   in
   expr () >>= aux
@@ -746,10 +746,11 @@ and multiplicativeExpression () =
 (*|   ;                                                  |*)
 and asExpression () =
   prefixUnaryExpression () >>= fun puEx ->
-  (mkNode "AsExpression"
-   <:> mkProp "Prefix" (return puEx)
-   <:> mkProp "Operator" (asOperator () >>= mkString)
-   <:> mkProp "Type" (fix type')
+  (
+    mkNode "AsExpression"
+    <:> mkProp "Prefix" (return puEx)
+    <:> mkProp "Operator" (asOperator () >>= mkString)
+    <:> mkProp "Type" (fix type')
   )
   <|> (return puEx)
 
@@ -1300,7 +1301,7 @@ and equalityOperator () =
 (*|     ;              |*)
 and comparisonOperator () =
   le <|> ge
-  <|> ((langle <|> rangle) >>| String.make 1)
+  <|> ((langle <|> rangle) <* anyspace >>| String.make 1)
 
 (*| inOperator        |*)
 (*|     : IN | NOT_IN |*)
