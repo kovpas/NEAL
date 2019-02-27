@@ -119,7 +119,7 @@ and declaration _ = (* TODO *)
   classDeclaration ()
   <!> objectDeclaration
   <!> functionDeclaration
-(* <!> propertyDeclaration *)
+  <!> propertyDeclaration
 (* <!> typeAlias *)
 
 (*| SECTION: classes |*)
@@ -358,6 +358,103 @@ and multiVariableDeclaration () =
   <* lparen <* anyspace
   <:> mkProp "Declarations" (commaSep variableDeclaration)
   <* anyspace <* rparen
+
+(*| propertyDeclaration                                                                  |*)
+(*|     : modifiers? (VAL | VAR)                                                         |*)
+(*|     (NL* typeParameters)?                                                            |*)
+(*|     (NL* receiverType NL* DOT)?                                                      |*)
+(*|     (NL* (multiVariableDeclaration | variableDeclaration))                           |*)
+(*|     (NL* typeConstraints)?                                                           |*)
+(*|     (NL* (ASSIGNMENT NL* expression | propertyDelegate))?                            |*)
+(*|     (NL+ SEMICOLON)? NL* (getter? (NL* semi? setter)? | setter? (NL* semi? getter)?) |*)
+(*|     ;                                                                                |*)
+and propertyDeclaration () =
+  mkNode "Property"
+  <:> mkOptPropEmptyE modifiers
+  <:> (
+    mkBoolProp "Variable" var
+    <|> mkBoolProp "Constant" val'
+  )
+  <:> mkOptPropE "TypeParameters" typeParameters
+  <:> mkOptProp "ReceiverType" (receiverType () <* dot)
+  <:> mkProp "Variables" (
+    multiVariableDeclaration ()
+    <!> variableDeclaration
+  )
+  <:> mkOptPropE "TypeConstraints" typeConstraints
+  <:> mkOptPropEmpty (
+    (assignment' *> mkProp "DefaultValue" (fix expression))
+    <|> mkPropE "Delegate" propertyDelegate
+  )
+  <* mkOptPropEmpty (Angstrom.many1 nl *> semicolon *> mkPropHolder)
+  <:> mkOptPropEmpty (
+    (
+      mkPropE "Getter" getter
+      <:> mkOptProp "Setter" (mkOptE semi *> setter ())
+    ) <|> (
+      mkPropE "Setter" setter
+      <:> mkOptProp "Getter" (mkOptE semi *> getter ())
+    )
+  )
+
+(*| propertyDelegate        |*)
+(*|     : BY NL* expression |*)
+(*|     ;                   |*)
+and propertyDelegate () =
+  by *> fix expression
+
+(*| getter                                                                               |*)
+(*|     : modifiers? GETTER                                                              |*)
+(*|     | modifiers? GETTER NL* LPAREN NL* RPAREN (NL* COLON NL* type)? NL* functionBody |*)
+(*|     ;                                                                                |*)
+and getter () =
+  mkNode "Getter"
+  <:> mkOptPropEmptyE modifiers
+  <* getter'
+  <:> mkOptPropEmpty (
+    lparen *> anyspace *> rparen
+    *> mkOptProp "Type" (anyspace *> colon *> anyspace *> fix type')
+    <:> mkPropE "Body" functionBody
+  )
+
+and parameterModifiers () = (* TODO *)
+  many1 (fun () ->
+      (* annotation () <!>  *)
+      parameterModifier ()
+    ) >>= fun mods ->
+  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+
+(*| setter                                                                                                                             |*)
+(*|     : modifiers? SETTER                                                                                                            |*)
+(*|     | modifiers? SETTER NL* LPAREN (annotation | parameterModifier)* setterParameter RPAREN (NL* COLON NL* type)? NL* functionBody |*)
+(*|     ;                                                                                                                              |*)
+and setter () = (* TODO *)
+  mkNode "Setter"
+  <:> mkOptPropEmptyE modifiers
+  <* setter'
+  <:> mkOptPropEmpty (
+    lparen *> anyspace
+    *> mkPropHolder
+    <:> (
+      parameterModifiers ()
+      >>= fun mods ->
+        mkProp "Parameter" (
+          setterParameter ()
+          <:> mkOptPropEmpty (return mods)
+        )
+    )
+    <* anyspace <* rparen
+    <:> mkOptProp "Type" (anyspace *> colon *> anyspace *> fix type')
+    <:> mkPropE "Body" functionBody
+  )
+
+(*| setterParameter                              |*)
+(*|     : simpleIdentifier NL* (COLON NL* type)? |*)
+(*|     ;                                        |*)
+and setterParameter () =
+  mkNode "Parameter"
+  <:> mkPropE "Name" simpleIdentifier
+  <:> mkOptProp "Type" (anyspace *> colon *> anyspace *> fix type')
 
 (*| parameter                                 |*)
 (*|     : simpleIdentifier NL* COLON NL* type |*)

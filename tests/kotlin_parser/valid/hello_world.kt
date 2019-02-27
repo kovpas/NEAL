@@ -145,10 +145,21 @@ class InitOrderDemo(name: String) {
     }
 }
 
-public fun<E> fullName(firstName: String = "Pavel", lastName: String = "Mazurin"): String {
+public fun<E> fullName(firstName: String = "John", lastName: String = "Doe"): String {
   return firstName + " " + lastName
 }
 
-private object Pasha: A by delegateA, B by delegateB {
+private object MyClass: A by delegateA, B by delegateB {
+  var a: String = "John"
+    get() = field
+    set(noinline vararg value: String) {
+      field = value
+    }
 
+  val b: String = "Doe"
+    set(noinline vararg value: String) = field
+    get() {
+      blah = value
+    }
 }
+

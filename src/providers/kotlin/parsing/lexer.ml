@@ -132,11 +132,11 @@ let notIn = wstring _notIn
 let _out = "out"
 let out = wstring _out
 (*| GETTER: 'get';              |*)
-let _getter = "get"
-let getter = wstring _getter
+let _getter' = "get"
+let getter' = wstring _getter'
 (*| SETTER: 'set';              |*)
-let _setter = "set"
-let setter = wstring _setter
+let _setter' = "set"
+let setter' = wstring _setter'
 (*| DYNAMIC: 'dynamic';         |*)
 let _dynamic = "dynamic"
 let dynamic = wstring _dynamic
@@ -618,8 +618,8 @@ and hardKeywords = [
   _notIs;
   _notIn;
   _out;
-  _getter;
-  _setter;
+  _getter';
+  _setter';
   _dynamic;
   _public;
   _private';
