@@ -146,3 +146,7 @@ class InitOrderDemo(name: String) {
       break@
     }
 }
+
+private object Pasha: A by delegateA, B by delegateB {
+
+}

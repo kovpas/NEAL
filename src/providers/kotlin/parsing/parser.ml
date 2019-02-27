@@ -117,8 +117,8 @@ and topLevelObject () =
 (*|     ;                     |*)
 and declaration _ = (* TODO *)
   classDeclaration ()
-(* <!> objectDeclaration
-   <!> functionDeclaration
+  <!> objectDeclaration
+(* <!> functionDeclaration
    <!> propertyDeclaration
    <!> typeAlias *)
 
@@ -354,6 +354,20 @@ and parameter () =
   mkNode "Parameter"
   <:> mkPropE "Name" simpleIdentifier
   <:> mkProp "Type" (anyspace *> colon *> anyspace *> (fix type'))
+
+(*| objectDeclaration                         |*)
+(*|     : modifiers? OBJECT                   |*)
+(*|     NL* simpleIdentifier                  |*)
+(*|     (NL* COLON NL* delegationSpecifiers)? |*)
+(*|     (NL* classBody)?                      |*)
+(*|     ;                                     |*)
+and objectDeclaration () =
+  mkNode "ObjectDeclaration"
+  <:> mkOptPropEmptyE modifiers
+  <* object'
+  <:> mkPropE "Name" simpleIdentifier
+  <:> mkOptProp "DelegationCall" (anyspace *> colon *> anyspace *> delegationSpecifiers ())
+  <:> mkOptProp "Block" (fix classBody)
 
 (*| secondaryConstructor                                                                                           |*)
 (*|     : modifiers? CONSTRUCTOR NL* functionValueParameters (NL* COLON NL* constructorDelegationCall)? NL* block? |*)
@@ -651,10 +665,10 @@ and auxExpression' name prop expr =
   (* auxExpression'' name prop expr expr *)
   let rec aux = fun e ->
     (prop >>= fun opProp ->
-      mkNode name
-      <:> mkProp "Lhs" (return e)
-      <:> (return opProp)
-      <:> mkProp "Rhs" (expr () >>= aux))
+     mkNode name
+     <:> mkProp "Lhs" (return e)
+     <:> (return opProp)
+     <:> mkProp "Rhs" (expr () >>= aux))
     <|> (return e)
   in
   expr () >>= aux
@@ -901,8 +915,9 @@ and valueArgument () = (* TODO *)
 (*|   | tryExpression            |*)
 (*|   | jumpExpression           |*)
 (*|   ;                          |*)
-and primaryExpression () = (* TODO *)
+and primaryExpression () =
   parenthesizedExpression ()
+  <!> simpleIdentifier
   <!> literalConstant
   <!> stringLiteral
   <!> callableReference
@@ -915,7 +930,6 @@ and primaryExpression () = (* TODO *)
   <!> whenExpression
   <!> tryExpression
   <!> jumpExpression
-  <!> simpleIdentifier
 
 (*| parenthesizedExpression              |*)
 (*|   : LPAREN NL* expression NL* RPAREN |*)
