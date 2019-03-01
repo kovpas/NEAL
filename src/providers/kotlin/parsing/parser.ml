@@ -315,11 +315,12 @@ and functionValueParameters () =
 (*|     : modifiers? parameter (NL* ASSIGNMENT NL* expression)? |*)
 (*|     ;                                                       |*)
 and functionValueParameter () =
-  mkOptPropEmptyE modifiers
-  >>= fun modsProp ->
-  parameter ()
-  <:> return modsProp
-  <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
+  mkOptPropEmptyE modifiers >>= (
+    fun modsProp ->
+      parameter ()
+      <:> return modsProp
+      <:> mkOptPropEmpty (assignment' *> mkProp "DefaultValue" (fix expression))
+  )
 
 (*| functionDeclaration                                                            |*)
 (*|     : modifiers?                                                               |*)
@@ -433,8 +434,10 @@ and parameterModifiers () = (* TODO *)
   many1 (fun () ->
       (* annotation () <!>  *)
       parameterModifier ()
-    ) >>= fun mods ->
-  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+    ) >>= (
+    fun mods ->
+      List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+  )
 
 (*| setter                                                                                                                             |*)
 (*|     : modifiers? SETTER                                                                                                            |*)
@@ -448,10 +451,12 @@ and setter () = (* TODO *)
     lparen *> anyspace
     *> mkPropHolder
     <:> (
-      parameterModifiers () >>= fun mods ->
-      mkProp "Parameter" (
-        setterParameter ()
-        <:> mkOptPropEmpty (return mods)
+      parameterModifiers () >>= (
+        fun mods ->
+          mkProp "Parameter" (
+            setterParameter ()
+            <:> mkOptPropEmpty (return mods)
+          )
       )
     )
     <* anyspace <* rparen
@@ -633,20 +638,22 @@ and typeProjection () =
   (mkNode "StarProjection" <* mult)
   <|>
   (mkNode "TypeProjection"
-   <:> (mkOptPropEmptyE typeProjectionModifiers >>= fun mods ->
-        mkProp "Type" (
-          fix type'
-          <:> (return mods)
-        )
+   <:> (mkOptPropEmptyE typeProjectionModifiers >>= (fun mods ->
+       mkProp "Type" (
+         fix type'
+         <:> (return mods)
        )
+     )
+     )
   )
 
 (*| typeProjectionModifiers       |*)
 (*|     : typeProjectionModifier+ |*)
 (*|     ;                         |*)
 and typeProjectionModifiers () =
-  many1 typeProjectionModifier >>= fun mods ->
-  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+  many1 typeProjectionModifier >>= (fun mods ->
+      List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+    )
 
 (*| typeProjectionModifier     |*)
 (*|     : varianceModifier NL* |*)
@@ -667,7 +674,7 @@ and receiverType ?skipLast:(skipLast:bool = false) () =
       nullableType ()
       <!> parenthesizedType
       <|> typeReference ~skipLast:skipLast ()
-      <:> (return mods)
+      <:> return mods
     )
 
 (*| parenthesizedType                |*)
@@ -801,17 +808,17 @@ and assignment () =
 (*| semi                       |*)
 (*|     : (SEMICOLON | NL) NL* |*)
 (*|     | EOF;                 |*)
-and semi () =
-  (semicolon >>= fun c -> mkString (String.make 1 c))
+and semi () = (* TODO - EOF *)
+  (semicolon *> mkString ";")
   <|> (nl *> mkString "")
 
 (*| semis                   |*)
 (*|     : (SEMICOLON | NL)+ |*)
 (*|     | EOF               |*)
 (*|     ;                   |*)
-and semis () =
+and semis () = (* TODO - EOF *)
   mkList1 (fun () ->
-      (semicolon >>= fun c -> mkString (String.make 1 c))
+      (semicolon *> mkString ";")
       <|> (nl *> mkString "")
     )
 
@@ -841,12 +848,13 @@ and auxExpression'' name prop expr1 expr2 =
 and auxExpression' name prop expr =
   (* auxExpression'' name prop expr expr *)
   let rec aux = fun e ->
-    (prop >>= fun opProp ->
-     mkNode name
-     <:> mkProp "Lhs" (return e)
-     <:> (return opProp)
-     <:> mkProp "Rhs" (expr () >>= aux))
-    <|> (return e)
+    (prop >>= (fun opProp ->
+         mkNode name
+         <:> mkProp "Lhs" (return e)
+         <:> return opProp
+         <:> mkProp "Rhs" (expr () >>= aux)
+       )
+    ) <|> return e
   in
   expr () >>= aux
 
@@ -881,25 +889,25 @@ and comparison () =
 (*| infixOperation                                                              |*)
 (*|   : elvisExpression (inOperator NL* elvisExpression | isOperator NL* type)* |*)
 (*|   ;                                                                         |*)
-and infixOperation () =
-  elvisExpression () >>= (
-    fun eExpr ->
-      let aux = fun op expr ->
+and infixOperation () = (* TODO - make recursive so it supports multiple in/is operators in a row *)
+  elvisExpression () >>= (fun eExpr ->
+      let (*rec*) aux = fun op expr ->
         mkProp "Operator" ((op () <* anyspace) >>= mkString)
-        <:> mkProp "Rhs" expr
+        <:> mkProp "Rhs" (expr(* >>= aux*))
       in
-      mkNode "InfixOperation"
-      <:> mkProp "Lhs" (return eExpr)
-      <:> (aux inOperator (elvisExpression ())
-           <|> aux isOperator (fix type'))
-      <|> (return eExpr)
-  )
+      (
+        mkNode "InfixOperation"
+        <:> mkProp "Lhs" (return eExpr)
+        <:> (aux inOperator (elvisExpression ())
+             <|> aux isOperator (fix type'))
+      ) <|> return eExpr
+    )
 
 (*| elvisExpression                                          |*)
 (*|   : infixFunctionCall (NL* elvis NL* infixFunctionCall)* |*)
 (*|   ;                                                      |*)
 and elvisExpression () =
-  auxExpression' "ElvisExpression" (mkProp "Operator" (elvis () >>= fun _ -> mkString "?:")) infixFunctionCall
+  auxExpression' "ElvisExpression" (mkProp "Operator" (elvis () *> mkString "?:")) infixFunctionCall
 
 (*| elvis                 |*)
 (*|   : QUEST_NO_WS COLON |*)
@@ -1330,19 +1338,19 @@ and superExpression () =
 (*|   | IF NL* LPAREN NL* expression NL* RPAREN NL* controlStructureBody? NL* SEMICOLON? NL* ELSE NL* (controlStructureBody | SEMICOLON) |*)
 (*|   ;                                                                                                                                  |*)
 and ifExpression () =
+  let aux = fun consProp ->
+    (mkPropHolder
+     <:> return consProp <* mkOpt (semicolon *> mkString ";")
+     <* else'
+     <:> (mkOptPropE "Alternate" controlStructureBody <|> mkOpt (semicolon *> mkString ";"))
+    )
+    <|> (return consProp <|> mkOptPropEmpty (semicolon *> mkString ";"))
+  in
   mkNode "IfExpression"
   <* if' <* lparen <* anyspace
   <:> mkProp "Condition" (fix expression)
   <* anyspace <* rparen
-  <:> (
-    (
-      mkPropHolder
-      <:> mkOptPropE "Consequent" controlStructureBody <* mkOpt (semicolon *> mkString ";")
-      <* else'
-      <:> (mkOptPropE "Alternate" controlStructureBody <|> mkOpt (semicolon *> mkString ";"))
-    )
-    <|> (mkOptPropE "Consequent" controlStructureBody <|> mkOpt (semicolon *> mkString ";"))
-  )
+  <:> (mkOptPropE "Consequent" controlStructureBody >>= aux)
 
 (*| whenSubject                                                                                     |*)
 (*|   : LPAREN (annotation* NL* VAL NL* variableDeclaration NL* ASSIGNMENT NL* )? expression RPAREN |*)
@@ -1619,8 +1627,9 @@ and modifier () =
 (*|     : typeModifier+ |*)
 (*|     ;               |*)
 and typeModifiers () =
-  many1 typeModifier >>= fun mods ->
-  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+  many1 typeModifier >>= (fun mods ->
+      List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+    )
 
 (*| typeModifier                   |*)
 (*|     : annotation | SUSPEND NL* |*)
@@ -1670,14 +1679,15 @@ and visibilityModifier () =
 (*|     ;            |*)
 and varianceModifier () =
   mkBoolProp "VarianceModifierIn" in'
-  <|> mkBoolProp "VarianceModifierOut" out
+  (* <|> mkBoolProp "VarianceModifierOut" out *)
 
 (*| typeParameterModifiers       |*)
 (*|     : typeParameterModifier+ |*)
 (*|     ;                        |*)
 and typeParameterModifiers () =
-  many1 typeParameterModifier >>= fun mods ->
-  List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+  many1 typeParameterModifier >>= (fun mods ->
+      List.fold_left (fun p m -> p <:> (return m)) mkPropHolder mods
+    )
 
 (*| typeParameterModifier         |*)
 (*|     : reificationModifier NL* |*)
@@ -1839,54 +1849,54 @@ and constructorInvocation () =
 (*|     | SUSPEND                |*)
 (*|     ;                        |*)
 and simpleIdentifier () =
-  anyspace *>
-  (pos >>= fun pos -> identifier' pos)
-  <|> (abstract >>= mkString)
-  <|> (annotation' >>= mkString)
-  <|> (by >>= mkString)
-  <|> (catch >>= mkString)
-  <|> (companion >>= mkString)
-  <|> (constructor >>= mkString)
-  <|> (crossinline >>= mkString)
-  <|> (data >>= mkString)
-  <|> (dynamic >>= mkString)
-  <|> (enum >>= mkString)
-  <|> (external' >>= mkString)
-  <|> (final >>= mkString)
-  <|> (finally >>= mkString)
-  <|> (getter' >>= mkString)
-  <|> (import >>= mkString)
-  <|> (infix >>= mkString)
-  <|> (init >>= mkString)
-  <|> (inline >>= mkString)
-  <|> (inner >>= mkString)
-  <|> (internal >>= mkString)
-  <|> (lateinit >>= mkString)
-  <|> (noinline >>= mkString)
-  <|> (open' >>= mkString)
-  <|> (operator >>= mkString)
-  <|> (out >>= mkString)
-  <|> (override >>= mkString)
-  <|> (private' >>= mkString)
-  <|> (protected >>= mkString)
-  <|> (public >>= mkString)
-  <|> (reified >>= mkString)
-  <|> (sealed >>= mkString)
-  <|> (tailrec >>= mkString)
-  <|> (setter' >>= mkString)
-  <|> (vararg >>= mkString)
-  <|> (where >>= mkString)
-  <|> (expect >>= mkString)
-  <|> (actual >>= mkString)
-  <|> (const >>= mkString)
-  <|> (suspend >>= mkString)
+  (anyspace *> pos >>= fun pos -> (abstract
+  <|> annotation'
+  <|> by
+  <|> catch
+  <|> companion
+  <|> constructor
+  <|> crossinline
+  <|> data
+  <|> dynamic
+  <|> enum
+  <|> external'
+  <|> final
+  <|> finally
+  <|> getter'
+  <|> import
+  <|> infix
+  <|> init
+  <|> inline
+  <|> inner
+  <|> internal
+  <|> lateinit
+  <|> noinline
+  <|> open'
+  <|> operator
+  <|> out
+  <|> override
+  <|> private'
+  <|> protected
+  <|> public
+  <|> reified
+  <|> sealed
+  <|> tailrec
+  <|> setter'
+  <|> vararg
+  <|> where
+  <|> expect
+  <|> actual
+  <|> const
+  <|> suspend) >>= (fun si ->
+    return (NodeHolder (pos, Node ("Identifier", Off pos, [("Value", String si)])))
+  )
+  ) <|> (anyspace *> pos >>= identifier')
 
 (*| identifier                                         |*)
 (*|     : simpleIdentifier (NL* DOT simpleIdentifier)* |*)
 (*|     ;                                              |*)
 and identifier () =
-  sep_by1 dot (simpleIdentifier ())
-  >>= concatStringNodes "."
+  sep_by1 dot (simpleIdentifier ()) >>= concatStringNodes "."
 
 let parse file input =
   isParsingPattern := false;

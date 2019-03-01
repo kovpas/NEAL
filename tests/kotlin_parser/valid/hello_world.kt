@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2015 JetBrains s.r.o.
+ * Copyright 2010-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,258 +14,235 @@
  * limitations under the License.
  */
 
-package org.jetbrains.kotlin.serialization.deserialization.descriptors
+package org.jetbrains.kotlin.incremental.testingUtils
 
-import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.incremental.components.LookupLocation
-import org.jetbrains.kotlin.metadata.ProtoBuf
-import org.jetbrains.kotlin.name.ClassId
-import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.protobuf.AbstractMessageLite
-import org.jetbrains.kotlin.protobuf.MessageLite
-import org.jetbrains.kotlin.protobuf.Parser
-import org.jetbrains.kotlin.resolve.MemberComparator
-import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
-import org.jetbrains.kotlin.resolve.scopes.MemberScopeImpl
-import org.jetbrains.kotlin.serialization.deserialization.DeserializationContext
-import org.jetbrains.kotlin.serialization.deserialization.getName
-import org.jetbrains.kotlin.storage.getValue
+import com.intellij.openapi.util.io.FileUtil
+import com.sun.xml.internal.messaging.saaj.util.ByteOutputStream
+import org.jetbrains.kotlin.incremental.LocalFileKotlinClass
+import org.jetbrains.kotlin.js.parser.sourcemaps.SourceMapError
+import org.jetbrains.kotlin.js.parser.sourcemaps.SourceMapParser
+import org.jetbrains.kotlin.js.parser.sourcemaps.SourceMapSuccess
+import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
+import org.jetbrains.kotlin.metadata.DebugProtoBuf
+import org.jetbrains.kotlin.metadata.js.DebugJsProtoBuf
+import org.jetbrains.kotlin.metadata.jvm.DebugJvmProtoBuf
+import org.jetbrains.kotlin.metadata.jvm.deserialization.BitEncoding
+import org.jetbrains.kotlin.protobuf.ExtensionRegistry
+import org.jetbrains.kotlin.serialization.js.JsSerializerProtocol
+import org.jetbrains.kotlin.serialization.js.KotlinJavascriptSerializationUtil
+import org.jetbrains.kotlin.utils.KotlinJavascriptMetadata
+import org.jetbrains.kotlin.utils.KotlinJavascriptMetadataUtils
 import org.jetbrains.kotlin.utils.Printer
-import org.jetbrains.kotlin.utils.addIfNotNull
-import org.jetbrains.kotlin.utils.compact
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
+import org.jetbrains.org.objectweb.asm.ClassReader
+import org.jetbrains.org.objectweb.asm.util.TraceClassVisitor
+import org.junit.Assert
+import org.junit.Assert.assertNotNull
+import java.io.*
 import java.util.*
+import java.util.zip.CRC32
+import java.util.zip.GZIPInputStream
 
-abstract class DeserializedMemberScope protected constructor(
-    protected val c: DeserializationContext,
-    functionList: Collection<ProtoBuf.Function>,
-    propertyList: Collection<ProtoBuf.Property>,
-    typeAliasList: Collection<ProtoBuf.TypeAlias>,
-    classNames: () -> Collection<Name>
-) : MemberScopeImpl() {
+// Set this to true if you want to dump all bytecode (test will fail in this case)
+private val DUMP_ALL = System.getProperty("comparison.dump.all") == "true"
 
-    private val functionProtosBytes = functionList.groupByName { it.name }.packToByteArray()
+fun assertEqualDirectories(expected: File, actual: File, forgiveExtraFiles: Boolean) {
+    val pathsInExpected = getAllRelativePaths(expected)
+    val pathsInActual = getAllRelativePaths(actual)
 
-    private val propertyProtosBytes = propertyList.groupByName { it.name }.packToByteArray()
+    val commonPaths = pathsInExpected.intersect(pathsInActual)
+    val changedPaths = commonPaths
+            .filter { DUMP_ALL || !Arrays.equals(File(expected, it).readBytes(), File(actual, it).readBytes()) }
+            .sorted()
 
-    private val typeAliasBytes =
-        if (c.components.configuration.typeAliasesAllowed)
-            typeAliasList.groupByName { it.name }.packToByteArray()
-        else
-            emptyMap()
+    val expectedString = getDirectoryString(expected, changedPaths)
+    val actualString = getDirectoryString(actual, changedPaths)
 
-    private fun Map<Name, Collection<AbstractMessageLite>>.packToByteArray(): Map<Name, ByteArray> =
-        mapValues { entry ->
-            val byteArrayOutputStream = ByteArrayOutputStream()
-            entry.value.map { proto -> proto.writeDelimitedTo(byteArrayOutputStream) }
-            byteArrayOutputStream.toByteArray()
-        }
-
-    private val functions =
-        c.storageManager.createMemoizedFunction<Name, Collection<SimpleFunctionDescriptor>> { computeFunctions(it) }
-    private val properties =
-        c.storageManager.createMemoizedFunction<Name, Collection<PropertyDescriptor>> { computeProperties(it) }
-    private val typeAliasByName =
-        c.storageManager.createMemoizedFunctionWithNullableValues<Name, TypeAliasDescriptor> { createTypeAlias(it) }
-
-    private val functionNamesLazy by c.storageManager.createLazyValue {
-        functionProtosBytes.keys + getNonDeclaredFunctionNames()
+    if (DUMP_ALL) {
+        Assert.assertEquals(expectedString, actualString + " ")
     }
 
-    private val variableNamesLazy by c.storageManager.createLazyValue {
-        propertyProtosBytes.keys + getNonDeclaredVariableNames()
-    }
-
-    private val typeAliasNames: Set<Name> get() = typeAliasBytes.keys
-
-    internal val classNames by c.storageManager.createLazyValue { classNames().toSet() }
-
-    override fun getFunctionNames() = functionNamesLazy
-    override fun getVariableNames() = variableNamesLazy
-    override fun getClassifierNames(): Set<Name>? = classNames + typeAliasNames
-
-    override fun definitelyDoesNotContainName(name: Name): Boolean {
-        return name !in functionNamesLazy && name !in variableNamesLazy && name !in classNames && name !in typeAliasNames
-    }
-
-    private inline fun <M : MessageLite> Collection<M>.groupByName(
-        getNameIndex: (M) -> Int
-    ) = groupBy { c.nameResolver.getName(getNameIndex(it)) }
-
-    private fun computeFunctions(name: Name) =
-        computeDescriptors(
-            name,
-            functionProtosBytes,
-            ProtoBuf.Function.PARSER,
-            { c.memberDeserializer.loadFunction(it) },
-            { computeNonDeclaredFunctions(name, it) }
-        )
-
-    private inline fun <M : MessageLite, D : DeclarationDescriptor> computeDescriptors(
-        name: Name,
-        bytesByName: Map<Name, ByteArray>,
-        parser: Parser<M>,
-        factory: (M) -> D,
-        computeNonDeclared: (MutableCollection<D>) -> Unit
-    ): Collection<D> =
-        computeDescriptors(
-            bytesByName[name]?.let {
-                val inputStream = ByteArrayInputStream(it)
-                generateSequence {
-                    parser.parseDelimitedFrom(inputStream, c.components.extensionRegistryLite)
-                }.toList()
-            } ?: emptyList(),
-            factory,
-            computeNonDeclared
-        )
-
-    private inline fun <M : MessageLite, D : DeclarationDescriptor> computeDescriptors(
-        protos: Collection<M>,
-        factory: (M) -> D,
-        computeNonDeclared: (MutableCollection<D>) -> Unit
-    ): Collection<D> {
-        val descriptors = protos.mapTo(arrayListOf(), factory)
-
-        computeNonDeclared(descriptors)
-        return descriptors.compact()
-    }
-
-    protected open fun computeNonDeclaredFunctions(name: Name, functions: MutableCollection<SimpleFunctionDescriptor>) {
-    }
-
-    override fun getContributedFunctions(name: Name, location: LookupLocation): Collection<SimpleFunctionDescriptor> {
-        if (name !in getFunctionNames()) return emptyList()
-        return functions(name)
-    }
-
-    private fun computeProperties(name: Name) =
-        computeDescriptors(
-            name,
-            propertyProtosBytes,
-            ProtoBuf.Property.PARSER,
-            { c.memberDeserializer.loadProperty(it) },
-            { computeNonDeclaredProperties(name, it) }
-        )
-
-    protected open fun computeNonDeclaredProperties(name: Name, descriptors: MutableCollection<PropertyDescriptor>) {
-    }
-
-    private fun createTypeAlias(name: Name): TypeAliasDescriptor? {
-        val byteArray = typeAliasBytes[name] ?: return null
-        val proto =
-            ProtoBuf.TypeAlias.parseDelimitedFrom(
-                ByteArrayInputStream(byteArray), c.components.extensionRegistryLite
-            ) ?: return null
-        return c.memberDeserializer.loadTypeAlias(proto)
-    }
-
-    override fun getContributedVariables(name: Name, location: LookupLocation): Collection<PropertyDescriptor> {
-        if (name !in getVariableNames()) return emptyList()
-        return properties(name)
-    }
-
-    protected fun computeDescriptors(
-        kindFilter: DescriptorKindFilter,
-        nameFilter: (Name) -> Boolean,
-        location: LookupLocation
-    ): Collection<DeclarationDescriptor> {
-        //NOTE: descriptors should be in the same order they were serialized in
-        // see MemberComparator
-        val result = ArrayList<DeclarationDescriptor>(0)
-
-        if (kindFilter.acceptsKinds(DescriptorKindFilter.SINGLETON_CLASSIFIERS_MASK)) {
-            addEnumEntryDescriptors(result, nameFilter)
-        }
-
-        addFunctionsAndProperties(result, kindFilter, nameFilter, location)
-
-        if (kindFilter.acceptsKinds(DescriptorKindFilter.CLASSIFIERS_MASK)) {
-            for (className in classNames) {
-                if (nameFilter(className)) {
-                    result.addIfNotNull(deserializeClass(className))
-                }
+    if (forgiveExtraFiles) {
+        // If compilation fails, output may be different for full rebuild and partial make. Parsing output (directory string) for simplicity.
+        if (changedPaths.isEmpty()) {
+            val expectedListingLines = expectedString.split('\n').toList()
+            val actualListingLines = actualString.split('\n').toList()
+            if (actualListingLines.containsAll(expectedListingLines)) {
+                return
             }
         }
-
-        if (kindFilter.acceptsKinds(DescriptorKindFilter.TYPE_ALIASES_MASK)) {
-            for (typeAliasName in typeAliasNames) {
-                if (nameFilter(typeAliasName)) {
-                    result.addIfNotNull(typeAliasByName(typeAliasName))
-                }
-            }
-        }
-
-        return result.compact()
     }
 
-    private fun addFunctionsAndProperties(
-        result: MutableCollection<DeclarationDescriptor>,
-        kindFilter: DescriptorKindFilter,
-        nameFilter: (Name) -> Boolean,
-        location: LookupLocation
-    ) {
-        if (kindFilter.acceptsKinds(DescriptorKindFilter.VARIABLES_MASK)) {
-            addMembers(
-                getVariableNames(),
-                nameFilter,
-                result
-            ) { getContributedVariables(it, location) }
-        }
+    Assert.assertEquals(expectedString, actualString)
+}
 
-        if (kindFilter.acceptsKinds(DescriptorKindFilter.FUNCTIONS_MASK)) {
-            addMembers(
-                getFunctionNames(),
-                nameFilter,
-                result
-            ) { getContributedFunctions(it, location) }
-        }
-    }
+private fun File.checksumString(): String {
+    val crc32 = CRC32()
+    crc32.update(this.readBytes())
+    return java.lang.Long.toHexString(crc32.value)
+}
 
-    private inline fun addMembers(
-        names: Collection<Name>,
-        nameFilter: (Name) -> Boolean,
-        result: MutableCollection<DeclarationDescriptor>,
-        descriptorsByName: (Name) -> Collection<DeclarationDescriptor>
-    ) {
-        val subResult = ArrayList<DeclarationDescriptor>()
-        for (name in names) {
-            if (nameFilter(name)) {
-                subResult.addAll(descriptorsByName(name))
-            }
-        }
+private fun getDirectoryString(dir: File, interestingPaths: List<String>): String {
+    val buf = StringBuilder()
+    val p = Printer(buf)
 
-        subResult.sortWith(MemberComparator.NameAndTypeMemberComparator.INSTANCE)
-        result.addAll(subResult)
-    }
 
-    override fun getContributedClassifier(name: Name, location: LookupLocation): ClassifierDescriptor? =
-        when {
-            hasClass(name) -> deserializeClass(name)
-            name in typeAliasNames -> typeAliasByName(name)
-            else -> null
-        }
-
-    private fun deserializeClass(name: Name): ClassDescriptor? =
-        c.components.deserializeClass(createClassId(name))
-
-    protected open fun hasClass(name: Name): Boolean =
-        name in classNames
-
-    protected abstract fun createClassId(name: Name): ClassId
-
-    protected abstract fun getNonDeclaredFunctionNames(): Set<Name>
-    protected abstract fun getNonDeclaredVariableNames(): Set<Name>
-
-    protected abstract fun addEnumEntryDescriptors(result: MutableCollection<DeclarationDescriptor>, nameFilter: (Name) -> Boolean)
-
-    override fun printScopeStructure(p: Printer) {
-        p.println(this::class.java.simpleName, " {")
+    fun addDirContent(dir: File) {
         p.pushIndent()
 
-        p.println("containingDeclaration = " + c.containingDeclaration)
+        val listFiles = dir.listFiles()
+        assertNotNull("$dir does not exist", listFiles)
+
+        val children = listFiles!!.sortedWith(compareBy({ it.isDirectory }, { it.name }))
+        for (child in children) {
+            if (child.isDirectory) {
+                if ((child.list()?.isNotEmpty() ?: false)) {
+                    p.println(child.name)
+                    addDirContent(child)
+                }
+            }
+            else {
+                p.println(child.name, " ", child.checksumString())
+            }
+        }
 
         p.popIndent()
-        p.println("}")
+    }
+
+
+    p.println(".")
+    addDirContent(dir)
+
+    for (path in interestingPaths) {
+        p.println("================", path, "================")
+        p.println(fileToStringRepresentation(File(dir, path)))
+        p.println()
+        p.println()
+    }
+
+    return buf.toString()
+}
+
+private fun getAllRelativePaths(dir: File): Set<String> {
+    val result = HashSet<String>()
+    FileUtil.processFilesRecursively(dir) {
+        if (it!!.isFile) {
+            result.add(FileUtil.getRelativePath(dir, it)!!)
+        }
+
+        true
+    }
+
+    return result
+}
+
+private fun classFileToString(classFile: File): String {
+    val out = StringWriter()
+
+    val traceVisitor = TraceClassVisitor(PrintWriter(out))
+    ClassReader(classFile.readBytes()).accept(traceVisitor, 0)
+
+    val classHeader = LocalFileKotlinClass.create(classFile)?.classHeader
+
+    val annotationDataEncoded = classHeader?.data
+    if (annotationDataEncoded != null) {
+        ByteArrayInputStream(BitEncoding.decodeBytes(annotationDataEncoded)).use {
+            input ->
+
+            out.write("\n------ string table types proto -----\n${DebugJvmProtoBuf.StringTableTypes.parseDelimitedFrom(input)}")
+
+            if (!classHeader.metadataVersion.isCompatible()) {
+                error("Incompatible class ($classHeader): $classFile")
+            }
+
+            when (classHeader.kind) {
+                KotlinClassHeader.Kind.FILE_FACADE ->
+                    out.write("\n------ file facade proto -----\n${DebugProtoBuf.Package.parseFrom(input, getExtensionRegistry())}")
+                KotlinClassHeader.Kind.CLASS ->
+                    out.write("\n------ class proto -----\n${DebugProtoBuf.Class.parseFrom(input, getExtensionRegistry())}")
+                KotlinClassHeader.Kind.MULTIFILE_CLASS_PART ->
+                    out.write("\n------ multi-file part proto -----\n${DebugProtoBuf.Package.parseFrom(input, getExtensionRegistry())}")
+                else -> throw IllegalStateException()
+            }
+        }
+    }
+
+    return out.toString()
+}
+
+private fun metaJsToString(metaJsFile: File): String {
+    val out = StringWriter()
+
+    val metadataList = arrayListOf<KotlinJavascriptMetadata>()
+    KotlinJavascriptMetadataUtils.parseMetadata(metaJsFile.readText(), metadataList)
+
+    for (metadata in metadataList) {
+        val (header, content) = GZIPInputStream(ByteArrayInputStream(metadata.body)).use { stream ->
+            DebugJsProtoBuf.Header.parseDelimitedFrom(stream, JsSerializerProtocol.extensionRegistry) to
+                    DebugJsProtoBuf.Library.parseFrom(stream, JsSerializerProtocol.extensionRegistry)
+        }
+        out.write("\n------ header -----\n$header")
+        out.write("\n------ library -----\n$content")
+    }
+
+    return out.toString()
+}
+
+private fun kjsmToString(kjsmFile: File): String {
+    val out = StringWriter()
+
+    val stream = DataInputStream(kjsmFile.inputStream())
+    // Read and skip the metadata version
+    repeat(stream.readInt()) { stream.readInt() }
+
+    val (header, content) =
+            DebugJsProtoBuf.Header.parseDelimitedFrom(stream, JsSerializerProtocol.extensionRegistry) to
+                    DebugJsProtoBuf.Library.parseFrom(stream, JsSerializerProtocol.extensionRegistry)
+
+    out.write("\n------ header -----\n$header")
+    out.write("\n------ library -----\n$content")
+
+    return out.toString()
+}
+
+private fun sourceMapFileToString(sourceMapFile: File, generatedJsFile: File): String {
+    val sourceMapParseResult = SourceMapParser.parse(StringReader(sourceMapFile.readText()))
+    return when (sourceMapParseResult) {
+        is SourceMapSuccess -> {
+            val bytesOut = ByteArrayOutputStream()
+            PrintStream(bytesOut).use { printStream ->
+                sourceMapParseResult.value.debugVerbose(printStream, generatedJsFile)
+            }
+            bytesOut.toString()
+        }
+        is SourceMapError -> {
+            sourceMapParseResult.message
+        }
+    }
+}
+
+private fun getExtensionRegistry(): ExtensionRegistry {
+    val registry = ExtensionRegistry.newInstance()!!
+    DebugJvmProtoBuf.registerAllExtensions(registry)
+    return registry
+}
+
+private fun fileToStringRepresentation(file: File): String {
+    return when {
+        file.name.endsWith(".class") -> {
+            classFileToString(file)
+        }
+        file.name.endsWith(KotlinJavascriptMetadataUtils.META_JS_SUFFIX) -> {
+            metaJsToString(file)
+        }
+        file.name.endsWith(KotlinJavascriptSerializationUtil.CLASS_METADATA_FILE_EXTENSION) -> {
+            kjsmToString(file)
+        }
+        file.name.endsWith(".js.map") -> {
+            val generatedJsPath = file.canonicalPath.removeSuffix(".map")
+            sourceMapFileToString(file, File(generatedJsPath))
+        }
+        else -> {
+            file.readText()
+        }
     }
 }

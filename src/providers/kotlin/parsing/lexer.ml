@@ -470,7 +470,7 @@ and hexLiteral (): string Angstrom.t = (* TODO *)
       hexDigit () >>= fun hd1 ->
       many (hexDigitOrSeparator ()) >>= fun hdoss ->
       (* hexDigit () >>= fun hd2 ->
-      return (String.concat "" (List.map (String.make 1) ('0'::'x'::hd1::hdoss @ [hd2]))) *)
+         return (String.concat "" (List.map (String.make 1) ('0'::'x'::hd1::hdoss @ [hd2]))) *)
       return (String.concat "" (List.map (String.make 1) ('0'::'x'::hd1::hdoss)))
     ) <|> (
       hexDigit () >>= fun hd ->
@@ -501,7 +501,7 @@ and binLiteral (): string Angstrom.t = (* TODO *)
       binDigit () >>= fun bd1 ->
       many (binDigitOrSeparator ()) >>= fun bdoss ->
       (* binDigit () >>= fun bd2 ->
-      return (String.concat "" (List.map (String.make 1) ('0'::'b'::bd1::bdoss @ [bd2]))) *)
+         return (String.concat "" (List.map (String.make 1) ('0'::'b'::bd1::bdoss @ [bd2]))) *)
       return (String.concat "" (List.map (String.make 1) ('0'::'b'::bd1::bdoss)))
     ) <|> (
       binDigit () >>= fun bd ->
@@ -566,22 +566,6 @@ and characterLiteral () =
 (*| fragment UnicodeDigit: UNICODE_CLASS_ND; |*)
 and unicodeDigit () =
   unicode_class_nd ()
-
-and nonReservedIdentifier pos keywords =
-  (
-    List.cons <$> (letter' () <|> char '_')
-    <*> (option [] (many1
-                      (fun () ->
-                         letter' () <|> char '_' <|> unicodeDigit ()
-                      )
-                   )
-        )
-  ) >>= fun chars ->
-  match string_of_chars chars with
-  | String l when List.mem l keywords ->
-    fail "Keyword can't be used as identifier"
-  | str ->
-    return (NodeHolder (pos, Node ("Identifier", Off pos, [("Value", str)])))
 
 and hardKeywords = [
   _package;
@@ -659,6 +643,22 @@ and hardKeywords = [
 (*|     : (Letter | '_') (Letter | '_' | UnicodeDigit)*                                   |*)
 (*|     | '`' ~([\r\n] | '`' | '.' | ';' | ':' | '\\' | '/' | '[' | ']' | '<' | '>')+ '`' |*)
 (*|     ;                                                                                 |*)
+and nonReservedIdentifier pos keywords =
+  (
+    List.cons <$> (letter' () <|> char '_')
+    <*> (option [] (many1 (fun () ->
+                         letter' () <|> char '_' <|> unicodeDigit ()
+                      )
+                   )
+        )
+  ) >>= (fun chars ->
+      match string_of_chars chars with
+      | String l when List.mem l keywords ->
+        fail "Keyword can't be used as identifier"
+      | str ->
+        return (NodeHolder (pos, Node ("Identifier", Off pos, [("Value", str)])))
+    )
+
 and identifier' pos = (* TODO *)
   nonReservedIdentifier pos hardKeywords
 
@@ -707,7 +707,7 @@ and identifier' pos = (* TODO *)
 (*|     | SUSPEND             |*)
 (*|     ;                     |*)
 and identifierOrSoftKey () = (* TODO *)
-  pos >>= fun pos -> identifier' pos
+  pos >>= identifier'
 
 (*| IdentifierAt                  |*)
 (*|     : IdentifierOrSoftKey '@' |*)
@@ -725,12 +725,13 @@ and fieldIdentifier () =
 (*|     : '\\' 'u' HexDigit HexDigit HexDigit HexDigit |*)
 (*|     ;                                              |*)
 and uniCharacterLiteral (): string Angstrom.t =
-  string "\\u" *> count 4 (hexDigit ()) >>= fun digits ->
-  if List.length digits != 4
-  then fail "Invalid unicode sequence"
-  else match string_of_chars digits with
-    | String s -> return ("\\u{" ^ s ^ "}")
-    | _ -> pos >>= unreachable
+  string "\\u" *> count 4 (hexDigit ()) >>= (fun digits ->
+      if List.length digits != 4
+      then fail "Invalid unicode sequence"
+      else match string_of_chars digits with
+        | String s -> return ("\\u{" ^ s ^ "}")
+        | _ -> pos >>= unreachable
+    )
 
 (*| fragment EscapedIdentifier                                   |*)
 (*|     : '\\' ('t' | 'b' | 'r' | 'n' | '\'' | '"' | '\\' | '$') |*)
@@ -792,7 +793,7 @@ and lineStrRef () =
 (*|     ;                            |*)
 and lineStrText (): string Angstrom.t =
   (* string "$"
-  <|> *)
+     <|> *)
   (
     many1 (fun () -> satisfy(function
         | '\\'
@@ -800,8 +801,9 @@ and lineStrText (): string Angstrom.t =
         | '$' -> false
         | _ -> true
       ) >>| String.make 1)
-    >>= fun strs ->
-      return (String.concat "" strs)
+    >>= (fun strs ->
+        return (String.concat "" strs)
+      )
   )
 
 (*| LineStrEscapedChar        |*)
@@ -830,8 +832,8 @@ and tripleQuoteClose () = (* TODO *)
 (*|     : '"'+           |*)
 (*|     ;                |*)
 (* and multiLineStringQuote (): string Angstrom.t =
-  Angstrom.many1 (char '"') >>= fun chars ->
-  return (String.concat "" (List.map (String.make 1) chars)) *)
+   Angstrom.many1 (char '"') >>= fun chars ->
+   return (String.concat "" (List.map (String.make 1) chars)) *)
 
 (*| MultiLineStrRef       |*)
 (*|     : FieldIdentifier |*)
@@ -844,15 +846,16 @@ and multiLineStrRef () =
 (*|     ;                      |*)
 and multiLineStrText (): string Angstrom.t =
   (* string "$"
-  <|> *)
+     <|> *)
   (
     many1 (fun () -> satisfy(function
         | '"'
         | '$' -> false
         | _ -> true
       ) >>| String.make 1)
-    >>= fun strs ->
-      return (String.concat "" strs)
+    >>= (fun strs ->
+        return (String.concat "" strs)
+      )
   )
 
 (*| MultiLineStrExprStart                |*)
