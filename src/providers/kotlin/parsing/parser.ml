@@ -48,9 +48,9 @@ and kotlinFile () =
 (*|     ;                                                                                 |*)
 (* and script () =  *)
 
-(*| shebangLine                                                                                             |*)
+(*| shebangLine           |*)
 (*|     : ShebangLine NL+ |*)
-(*|     ;                                                                                                      |*)
+(*|     ;                 |*)
 and shebangLine () =
   shebangLine' ()
   <* skip_many1 nl
@@ -334,7 +334,7 @@ and functionDeclaration () =
   <:> mkOptPropEmptyE modifiers
   <* fun'
   <:> mkOptPropE "TypeParameters" typeParameters
-  <:> mkOptProp "ReceiverType" (receiverType () <* dot)
+  <:> mkOptProp "ReceiverType" (receiverType ~skipLast:true () <* dot)
   <:> mkPropE "Name" simpleIdentifier
   <:> mkPropE "Parameters" functionValueParameters
   <:> mkOptProp "ReturnType" (anyspace *> colon *> anyspace *> fix type')
@@ -395,7 +395,7 @@ and propertyDeclaration () =
   )
   <:> mkOptPropE "TypeConstraints" typeConstraints
   <:> mkOptPropEmpty (
-    (assignment' *> mkProp "DefaultValue" (fix expression))
+    (assignment' *> mkProp "Value" (fix expression))
     <|> mkPropE "Delegate" propertyDelegate
   )
   <* mkOptPropEmpty (Angstrom.many1 nl *> semicolon *> mkPropHolder)
@@ -448,12 +448,11 @@ and setter () = (* TODO *)
     lparen *> anyspace
     *> mkPropHolder
     <:> (
-      parameterModifiers ()
-      >>= fun mods ->
-        mkProp "Parameter" (
-          setterParameter ()
-          <:> mkOptPropEmpty (return mods)
-        )
+      parameterModifiers () >>= fun mods ->
+      mkProp "Parameter" (
+        setterParameter ()
+        <:> mkOptPropEmpty (return mods)
+      )
     )
     <* anyspace <* rparen
     <:> mkOptProp "Type" (anyspace *> colon *> anyspace *> fix type')
@@ -565,11 +564,11 @@ and type' _ =
 (*|     : userType |*)
 (*|     | DYNAMIC  |*)
 (*|     ;          |*)
-and typeReference () =
+and typeReference ?skipLast:(skipLast:bool = false) () =
   mkNode "TypeReference"
   <:> (
     mkBoolProp "DynamicModifier" dynamic
-    <|> mkPropE "Value" userType
+    <|> mkProp "Value" (userType ~skipLast:skipLast ())
   )
 
 (*| nullableType                                         |*)
@@ -587,12 +586,38 @@ and nullableType () =
 and quest () =
   questNoWs <|> questWs
 
+
+(* [My.Awesome.Type].square *)
+and userTypeNoLastDot () =
+  let depth = ref 0 in
+  let rec tail = fun () -> (
+      ((anyspace *> dot <* anyspace) *> simpleUserType ()) >>= fun sut ->
+      option ([]) (tail ()) >>= function
+      | [] when !depth <= 0 -> ((depth := !depth + 1); fail "Last bit")
+      | [] -> return [sut]
+      | tl -> return (sut::tl)
+    )
+  in
+
+  simpleUserType () >>= fun sut ->
+  option ([]) (tail ()) >>= function
+  | [] when !depth <= 0 -> (fail "Last bit")
+  | [] -> return [sut]
+  | t -> return (sut::t)
+
 (*| userType                                           |*)
 (*|     : simpleUserType (NL* DOT NL* simpleUserType)* |*)
 (*|     ;                                              |*)
-and userType () = (* TODO??: join types up to <Generic> *)
+and userType ?skipLast:(skipLast:bool = false) () = (* TODO??: join types up to <Generic> *)
   mkNode "UserType"
-  <:> mkProp "Types" (sep_by1 (anyspace *> dot <* anyspace) (simpleUserType ()) >>= toList)
+  <:> mkProp "Types" (
+    if skipLast
+    then (
+      userTypeNoLastDot () >>= toList
+    ) else (
+      sep_by1 (anyspace *> dot <* anyspace) (simpleUserType ()) >>= toList
+    )
+  )
 
 (*| simpleUserType                              |*)
 (*|     : simpleIdentifier (NL* typeArguments)? |*)
@@ -637,11 +662,11 @@ and typeProjectionModifier () = (* TODO *)
 (*|     | nullableType      |*)
 (*|     | typeReference)    |*)
 (*|     ;                   |*)
-and receiverType () =
+and receiverType ?skipLast:(skipLast:bool = false) () =
   mkOptPropEmptyE typeModifiers >>= (fun mods ->
       nullableType ()
       <!> parenthesizedType
-      <!> typeReference
+      <|> typeReference ~skipLast:skipLast ()
       <:> (return mods)
     )
 
@@ -857,16 +882,18 @@ and comparison () =
 (*|   : elvisExpression (inOperator NL* elvisExpression | isOperator NL* type)* |*)
 (*|   ;                                                                         |*)
 and infixOperation () =
-  elvisExpression () >>= fun eExpr ->
-  let aux = fun op expr ->
-    mkProp "Operator" ((op () <* anyspace) >>= mkString)
-    <:> mkProp "Rhs" expr
-  in
-  mkNode "InfixOperation"
-  <:> mkProp "Lhs" (return eExpr)
-  <:> (aux inOperator (elvisExpression ())
-       <|> aux isOperator (fix type'))
-  <|> (return eExpr)
+  elvisExpression () >>= (
+    fun eExpr ->
+      let aux = fun op expr ->
+        mkProp "Operator" ((op () <* anyspace) >>= mkString)
+        <:> mkProp "Rhs" expr
+      in
+      mkNode "InfixOperation"
+      <:> mkProp "Lhs" (return eExpr)
+      <:> (aux inOperator (elvisExpression ())
+           <|> aux isOperator (fix type'))
+      <|> (return eExpr)
+  )
 
 (*| elvisExpression                                          |*)
 (*|   : infixFunctionCall (NL* elvis NL* infixFunctionCall)* |*)
@@ -911,14 +938,16 @@ and multiplicativeExpression () =
 (*|   : prefixUnaryExpression (NL* asOperator NL* type)? |*)
 (*|   ;                                                  |*)
 and asExpression () =
-  prefixUnaryExpression () >>= fun puEx ->
-  (
-    mkNode "AsExpression"
-    <:> mkProp "Prefix" (return puEx)
-    <:> mkProp "Operator" (asOperator () >>= mkString)
-    <:> mkProp "Type" (fix type')
+  prefixUnaryExpression () >>= (
+    fun puEx ->
+      (
+        mkNode "AsExpression"
+        <:> mkProp "Prefix" (return puEx)
+        <:> mkProp "Operator" (asOperator () >>= mkString)
+        <:> mkProp "Type" (fix type')
+      )
+      <|> return puEx
   )
-  <|> (return puEx)
 
 (*| prefixUnaryExpression                   |*)
 (*|   : unaryPrefix* postfixUnaryExpression |*)
@@ -926,7 +955,7 @@ and asExpression () =
 and prefixUnaryExpression () =
   let aux = fun prfx ->
     mkNode "PrefixUnaryExpression"
-    <:> (return prfx)
+    <:> return prfx
     <:> mkPropE "Expression" postfixUnaryExpression
   in
   (mkProp "Prefixes" (mkList1 unaryPrefix) >>= aux)
@@ -947,14 +976,16 @@ and unaryPrefix () =
 (*|   | primaryExpression postfixUnarySuffix+ |*)
 (*|   ;                                       |*)
 and postfixUnaryExpression () =
-  primaryExpression () >>= fun pExpr ->
-  let aux = fun sfxs ->
-    mkNode "PostfixUnaryExpression"
-    <:> mkProp "Expression" (return pExpr)
-    <:> mkProp "Suffixes" (return sfxs)
-  in
-  (mkList1 postfixUnarySuffix >>= aux)
-  <|> (return pExpr)
+  primaryExpression () >>= (
+    fun pExpr ->
+      let aux = fun sfxs ->
+        mkNode "PostfixUnaryExpression"
+        <:> mkProp "Expression" (return pExpr)
+        <:> mkProp "Suffixes" (return sfxs)
+      in
+      (mkList1 postfixUnarySuffix >>= aux)
+      <|> return pExpr
+  )
 
 (*| postfixUnarySuffix       |*)
 (*|   : postfixUnaryOperator |*)
@@ -965,12 +996,13 @@ and postfixUnaryExpression () =
 (*|   ;                      |*)
 and postfixUnarySuffix () =
   mkNode "PostfixUnarySuffix"
-  <:> (mkPropE "UnaryOperator" postfixUnaryOperator
-       <|> mkPropE "TypeArguments" typeArguments
-       <|> mkPropE "CallSuffix" callSuffix
-       <|> mkPropE "IndexingSuffix" indexingSuffix
-       <|> mkPropE "NavigationSuffix" navigationSuffix
-      )
+  <:> (
+    mkPropE "UnaryOperator" postfixUnaryOperator
+    <|> mkPropE "TypeArguments" typeArguments
+    <|> mkPropE "CallSuffix" callSuffix
+    <|> mkPropE "IndexingSuffix" indexingSuffix
+    <|> mkProp "NavigationSuffix" (anyspace *> navigationSuffix ())
+  )
 
 (*| directlyAssignableExpression                |*)
 (*|   : postfixUnaryExpression assignableSuffix |*)
@@ -1429,7 +1461,7 @@ and jumpExpression () =
     >>= fun kwd ->
     mkNode "ReturnStatement"
     <:> mkProp "Keyword" (mkString kwd)
-    <:> mkProp "Expression" (fix expression)
+    <:> mkOptProp "Expression" (fix expression)
   ) <|> (
     mkNode "JumpExpression"
     <:> mkProp "Keyword" ((
@@ -1808,10 +1840,46 @@ and constructorInvocation () =
 (*|     ;                        |*)
 and simpleIdentifier () =
   anyspace *>
-  pos >>= fun pos ->
-  (
-    identifier' pos (* TODO *)
-  )
+  (pos >>= fun pos -> identifier' pos)
+  <|> (abstract >>= mkString)
+  <|> (annotation' >>= mkString)
+  <|> (by >>= mkString)
+  <|> (catch >>= mkString)
+  <|> (companion >>= mkString)
+  <|> (constructor >>= mkString)
+  <|> (crossinline >>= mkString)
+  <|> (data >>= mkString)
+  <|> (dynamic >>= mkString)
+  <|> (enum >>= mkString)
+  <|> (external' >>= mkString)
+  <|> (final >>= mkString)
+  <|> (finally >>= mkString)
+  <|> (getter' >>= mkString)
+  <|> (import >>= mkString)
+  <|> (infix >>= mkString)
+  <|> (init >>= mkString)
+  <|> (inline >>= mkString)
+  <|> (inner >>= mkString)
+  <|> (internal >>= mkString)
+  <|> (lateinit >>= mkString)
+  <|> (noinline >>= mkString)
+  <|> (open' >>= mkString)
+  <|> (operator >>= mkString)
+  <|> (out >>= mkString)
+  <|> (override >>= mkString)
+  <|> (private' >>= mkString)
+  <|> (protected >>= mkString)
+  <|> (public >>= mkString)
+  <|> (reified >>= mkString)
+  <|> (sealed >>= mkString)
+  <|> (tailrec >>= mkString)
+  <|> (setter' >>= mkString)
+  <|> (vararg >>= mkString)
+  <|> (where >>= mkString)
+  <|> (expect >>= mkString)
+  <|> (actual >>= mkString)
+  <|> (const >>= mkString)
+  <|> (suspend >>= mkString)
 
 (*| identifier                                         |*)
 (*|     : simpleIdentifier (NL* DOT simpleIdentifier)* |*)

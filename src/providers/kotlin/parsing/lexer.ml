@@ -162,8 +162,8 @@ let enum = wstring _enum
 let _sealed = "sealed"
 let sealed = wstring _sealed
 (*| ANNOTATION: 'annotation';   |*)
-let _annotation = "annotation"
-let annotation = wstring _annotation
+let _annotation' = "annotation"
+let annotation' = wstring _annotation'
 (*| DATA: 'data';               |*)
 let _data = "data"
 let data = wstring _data
@@ -538,8 +538,8 @@ and booleanLiteral () =
 
 (*| NullLiteral: 'null'; |*)
 and nullLiteral () =
-  mkNode "NilLiteral"
-  <* wstring "nil"
+  mkNode "NullLiteral"
+  <* wstring "null"
 
 (*| CharacterLiteral                         |*)
 (*|     : '\'' (EscapeSeq | ~[\n\r'\\]) '\'' |*)
@@ -629,7 +629,7 @@ and hardKeywords = [
   _internal;
   _enum;
   _sealed;
-  _annotation;
+  _annotation';
   _data;
   _inner;
   _tailrec;
