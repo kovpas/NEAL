@@ -1341,15 +1341,15 @@ and ifExpression () =
   let aux = fun consProp ->
     (mkPropHolder
      <:> return consProp <* mkOpt (semicolon *> mkString ";")
-     <* else'
+     <* else' <* anyspace
      <:> (mkOptPropE "Alternate" controlStructureBody <|> mkOpt (semicolon *> mkString ";"))
     )
     <|> (return consProp <|> mkOptPropEmpty (semicolon *> mkString ";"))
   in
   mkNode "IfExpression"
-  <* if' <* lparen <* anyspace
+  <* if' <* lparen
   <:> mkProp "Condition" (fix expression)
-  <* anyspace <* rparen
+  <* rparen <* anyspace
   <:> (mkOptPropE "Consequent" controlStructureBody >>= aux)
 
 (*| whenSubject                                                                                     |*)
@@ -1679,7 +1679,7 @@ and visibilityModifier () =
 (*|     ;            |*)
 and varianceModifier () =
   mkBoolProp "VarianceModifierIn" in'
-  (* <|> mkBoolProp "VarianceModifierOut" out *)
+  <|> mkBoolProp "VarianceModifierOut" out
 
 (*| typeParameterModifiers       |*)
 (*|     : typeParameterModifier+ |*)
