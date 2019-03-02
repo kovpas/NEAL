@@ -384,8 +384,9 @@ and decDigitOrSeparator () =
 and decDigits (): string Angstrom.t = (* TODO - simplify *)
   decDigit () >>= fun d: string Angstrom.t ->
   (many (decDigitOrSeparator ()) >>= fun midL: string Angstrom.t ->
-   decDigit () >>= fun l: string Angstrom.t ->
-   return (String.concat "" (List.map (String.make 1) (d::midL @ [l]))))
+   (* decDigit () >>= fun l: string Angstrom.t -> *)
+   (* return (String.concat "" (List.map (String.make 1) (d::midL @ [l])))) *)
+   return (String.concat "" (List.map (String.make 1) (d::midL))))
   <|>
   return (String.make 1 d)
 

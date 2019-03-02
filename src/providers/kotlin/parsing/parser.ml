@@ -1164,13 +1164,13 @@ and collectionLiteral () =
 (*|   ;                  |*)
 and literalConstant () =
   let aux = fun p t ->
-    p () >>= fun v ->
+    anyspace *> p () >>= fun v ->
     mkProp "Type" (mkString t)
     <:> mkProp "Value" (mkString v)
   in
   booleanLiteral ()
   <!> nullLiteral
-  <!> characterLiteral
+  <|> (anyspace *> characterLiteral ())
   <|> (
     mkNode "NumericLiteral"
     <:> (
@@ -1849,47 +1849,49 @@ and constructorInvocation () =
 (*|     | SUSPEND                |*)
 (*|     ;                        |*)
 and simpleIdentifier () =
-  (anyspace *> pos >>= fun pos -> (abstract
-  <|> annotation'
-  <|> by
-  <|> catch
-  <|> companion
-  <|> constructor
-  <|> crossinline
-  <|> data
-  <|> dynamic
-  <|> enum
-  <|> external'
-  <|> final
-  <|> finally
-  <|> getter'
-  <|> import
-  <|> infix
-  <|> init
-  <|> inline
-  <|> inner
-  <|> internal
-  <|> lateinit
-  <|> noinline
-  <|> open'
-  <|> operator
-  <|> out
-  <|> override
-  <|> private'
-  <|> protected
-  <|> public
-  <|> reified
-  <|> sealed
-  <|> tailrec
-  <|> setter'
-  <|> vararg
-  <|> where
-  <|> expect
-  <|> actual
-  <|> const
-  <|> suspend) >>= (fun si ->
-    return (NodeHolder (pos, Node ("Identifier", Off pos, [("Value", String si)])))
-  )
+  (anyspace *> pos >>= (
+      fun pos ->
+        abstract
+        <|> annotation'
+        <|> by
+        <|> catch
+        <|> companion
+        <|> constructor
+        <|> crossinline
+        <|> data
+        <|> dynamic
+        <|> enum
+        <|> external'
+        <|> final
+        <|> finally
+        <|> getter'
+        <|> import
+        <|> infix
+        <|> init
+        <|> inline
+        <|> inner
+        <|> internal
+        <|> lateinit
+        <|> noinline
+        <|> open'
+        <|> operator
+        <|> out
+        <|> override
+        <|> private'
+        <|> protected
+        <|> public
+        <|> reified
+        <|> sealed
+        <|> tailrec
+        <|> setter'
+        <|> vararg
+        <|> where
+        <|> expect
+        <|> actual
+        <|> const
+        <|> suspend) >>= (fun si ->
+      return (NodeHolder (pos, Node ("Identifier", Off pos, [("Value", String si)])))
+    )
   ) <|> (anyspace *> pos >>= identifier')
 
 (*| identifier                                         |*)
